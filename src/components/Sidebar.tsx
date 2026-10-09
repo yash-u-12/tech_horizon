@@ -39,7 +39,7 @@ export function Sidebar() {
           <NexusMark />
           <div className="min-w-0">
             <div className="font-['Manrope'] text-[19px] font-extrabold leading-none tracking-[0.16em] text-txt">
-              NEXUS
+              KUBERA
             </div>
             <div className="mt-1 text-3xs font-semibold uppercase leading-tight tracking-[0.1em] text-txt3">
               Autonomous Warehouse
@@ -112,7 +112,7 @@ export function Sidebar() {
   );
 }
 
-/** NEXUS mark: a coordination lattice — network + robot + twin, no clichés. */
+/** KUBERA mark: a coordination lattice — network + robot + twin, no clichés. */
 function NexusMark() {
   return (
     <svg width="26" height="26" viewBox="0 0 26 26" fill="none" className="shrink-0">

@@ -155,7 +155,7 @@ export function TwinPanel({ onClose }: { onClose: () => void }) {
             {!twin && (
               <div className="mt-3 rounded border border-nx-line/70 bg-nx-panel2/30 p-2.5 text-[10.5px] leading-relaxed text-nx-dim">
                 {hw.status === 'OFFLINE'
-                  ? `${hw.id} is not attached to the robot gateway right now. Telemetry is unavailable, so NEXUS reports the link as offline instead of inventing state.`
+                  ? `${hw.id} is not attached to the robot gateway right now. Telemetry is unavailable, so KUBERA reports the link as offline instead of inventing state.`
                   : `${hw.id} is free. Select a simulated agent and deploy it to give this body an autonomous brain.`}
               </div>
             )}

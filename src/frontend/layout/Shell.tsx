@@ -103,7 +103,7 @@ export function TopBar() {
       <div className="flex items-center gap-2">
         <NexusMark size={20} />
         <div className="leading-none">
-          <div className="text-[13px] font-semibold tracking-[0.14em] text-nx-text">NEXUS</div>
+          <div className="text-[13px] font-semibold tracking-[0.14em] text-nx-text">KUBERA</div>
           <div className="mt-[3px] text-[9px] uppercase tracking-[0.1em] text-nx-faint">Decentralised autonomous warehouse coordination</div>
         </div>
       </div>

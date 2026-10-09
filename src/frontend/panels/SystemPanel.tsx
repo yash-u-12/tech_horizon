@@ -10,7 +10,7 @@ export function buildNodes(
   engine: ReturnType<typeof useNexus.getState>['engine'],
 ): SystemNode[] {
   const nodes: SystemNode[] = [
-    { id: 'sim', label: 'NEXUS Simulation Engine', kind: 'SIM', status: snap.running ? 'ONLINE' : 'DEGRADED', detail: `${snap.fps} fps render · ${snap.speed}× sim rate · ${snap.simTimeS.toFixed(0)} s elapsed`, latencyMs: null, heartbeatHz: 20, packetLoss: null },
+    { id: 'sim', label: 'KUBERA Simulation Engine', kind: 'SIM', status: snap.running ? 'ONLINE' : 'DEGRADED', detail: `${snap.fps} fps render · ${snap.speed}× sim rate · ${snap.simTimeS.toFixed(0)} s elapsed`, latencyMs: null, heartbeatHz: 20, packetLoss: null },
     ...snap.agents.map((a) => ({
       id: a.id,
       label: `${a.id} · ${a.profile}`,
@@ -25,7 +25,7 @@ export function buildNodes(
     { id: 'gateway', label: 'Hardware Binding Manager', kind: 'BACKEND', status: 'ONLINE', detail: `${snap.hardware.length} hardware units · ${snap.bindings.length} binding(s) · ${engine.binding.rejections.length} refusal(s)`, latencyMs: null, heartbeatHz: null, packetLoss: null },
     {
       id: 'bridge',
-      label: 'NEXUS Robot Gateway (FastAPI)',
+      label: 'KUBERA Robot Gateway (FastAPI)',
       kind: 'GATEWAY',
       status: snap.bridge.connected ? 'ONLINE' : 'NOT_CONNECTED',
       detail: snap.bridge.connected ? snap.bridge.detail : 'not connected — physical commands are held in-process',

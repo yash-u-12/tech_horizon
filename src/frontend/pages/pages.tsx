@@ -235,7 +235,7 @@ export function SystemPage() {
         <CommandBar />
       </div>
       <div className="pointer-events-none absolute right-3 top-3 z-20">{showPanel && <SystemPanel onClose={() => setShowPanel(false)} />}</div>
-      <PageHint icon={<Cpu size={11} />} text="If the ROS 2 / hardware bridge is not connected, NEXUS says so instead of pretending the physical robot is online." />
+      <PageHint icon={<Cpu size={11} />} text="If the ROS 2 / hardware bridge is not connected, KUBERA says so instead of pretending the physical robot is online." />
     </>
   )
 }
