@@ -25,6 +25,10 @@ export interface LayerState {
 }
 
 export type CameraMode = 'ORBIT' | 'TOP' | 'ISO' | 'FOLLOW';
+export interface ManualOrderDraft {
+  pickup: { x: number; y: number };
+  destination: { x: number; y: number };
+}
 
 interface NexusState {
   snap: Snapshot;
@@ -34,6 +38,8 @@ interface NexusState {
   hoveredRobot: string | null;
   followId: string | null;
   cameraMode: CameraMode;
+  cameraGesture: 'DRAG' | 'PAN';
+  cameraPinchZoom: boolean;
   layers: LayerState;
   bindingFor: string | null;
   inspector: 'ROBOT' | 'TASK' | null;
@@ -46,6 +52,7 @@ interface NexusState {
   runningExperiment: string | null;
   clickMode: 'SELECT' | 'PLACE_OBSTACLE' | 'PLACE_TASK';
   placeFrom: { x: number; y: number } | null;
+  pendingOrder: ManualOrderDraft | null;
 
   setPage: (p: PageId) => void;
   selectRobot: (id: string | null) => void;
@@ -53,6 +60,8 @@ interface NexusState {
   hoverRobot: (id: string | null) => void;
   setFollow: (id: string | null) => void;
   setCameraMode: (m: CameraMode) => void;
+  setCameraGesture: (m: 'DRAG' | 'PAN') => void;
+  setCameraPinchZoom: (enabled: boolean) => void;
   toggleLayer: (k: keyof LayerState) => void;
   setLayer: (k: keyof LayerState, v: boolean) => void;
   openBinding: (robotId: string | null) => void;
@@ -69,6 +78,7 @@ interface NexusState {
   setRunningExperiment: (id: string | null) => void;
   setClickMode: (m: 'SELECT' | 'PLACE_OBSTACLE' | 'PLACE_TASK') => void;
   setPlaceFrom: (p: { x: number; y: number } | null) => void;
+  setPendingOrder: (draft: ManualOrderDraft | null) => void;
   rebuild: (robotCount?: number) => void;
 }
 
@@ -82,6 +92,8 @@ export const useNexus = create<NexusState>((set, get) => ({
   hoveredRobot: null,
   followId: null,
   cameraMode: 'ORBIT',
+  cameraGesture: 'DRAG',
+  cameraPinchZoom: true,
   layers: {
     paths: true,
     trails: true,
@@ -104,13 +116,20 @@ export const useNexus = create<NexusState>((set, get) => ({
   runningExperiment: null,
   clickMode: 'SELECT',
   placeFrom: null,
+  pendingOrder: null,
 
   setPage: (page) => set({ page }),
   selectRobot: (id) => set({ selectedRobot: id, inspector: id ? 'ROBOT' : null }),
-  selectTask: (id) => set({ selectedTask: id, inspector: id ? 'TASK' : null }),
+  selectTask: (id) => set({ selectedTask: id, selectedRobot: id ? null : get().selectedRobot, inspector: id ? 'TASK' : null }),
   hoverRobot: (id) => set({ hoveredRobot: id }),
-  setFollow: (id) => set({ followId: id, cameraMode: id ? 'FOLLOW' : 'ORBIT' }),
+  setFollow: (id) => set({
+    followId: id,
+    cameraMode: id ? 'FOLLOW' : 'ORBIT',
+    ...(id ? { selectedRobot: id, selectedTask: null, inspector: 'ROBOT' as const } : {}),
+  }),
   setCameraMode: (cameraMode) => set({ cameraMode, followId: cameraMode === 'FOLLOW' ? get().followId : null }),
+  setCameraGesture: (cameraGesture) => set({ cameraGesture }),
+  setCameraPinchZoom: (cameraPinchZoom) => set({ cameraPinchZoom }),
   toggleLayer: (k) => set((s) => ({ layers: { ...s.layers, [k]: !s.layers[k] } })),
   setLayer: (k, v) => set((s) => ({ layers: { ...s.layers, [k]: v } })),
   openBinding: (bindingFor) => set({ bindingFor }),
@@ -133,9 +152,10 @@ export const useNexus = create<NexusState>((set, get) => ({
   setRunningExperiment: (runningExperiment) => set({ runningExperiment }),
   setClickMode: (clickMode) => set({ clickMode, placeFrom: null }),
   setPlaceFrom: (placeFrom) => set({ placeFrom }),
+  setPendingOrder: (pendingOrder) => set({ pendingOrder }),
   rebuild: (robotCount) => {
     runtime.rebuild({ robotCount: robotCount ?? DEFAULT_CONFIG.robotCount });
-    set({ snap: runtime.snapshot, selectedRobot: null, selectedTask: null, inspector: null, followId: null });
+    set({ snap: runtime.snapshot, selectedRobot: null, selectedTask: null, inspector: null, followId: null, pendingOrder: null });
   },
 }));
 

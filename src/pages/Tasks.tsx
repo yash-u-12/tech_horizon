@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
 import { ListChecks, Package, Timer } from 'lucide-react';
 import { useNexus } from '@/store/useNexus';
@@ -7,6 +7,7 @@ import { TaskInspector } from '@/components/TaskInspector';
 import { Chip, Dot, Empty, Panel, Segmented, Stat, type Tone } from '@/components/ui';
 
 const STATE_TONE: Record<string, Tone> = {
+  ANNOUNCED: 'analysis',
   QUEUED: 'steel',
   ASSIGNED: 'nav',
   IN_PROGRESS: 'nav',
@@ -30,9 +31,21 @@ export function Tasks() {
   const selectTask = useNexus((s) => s.selectTask);
   const notify = useNexus((s) => s.notify);
   const [filter, setFilter] = useState<string>('ALL');
+  const [generation, setGeneration] = useState(runtime.taskGeneration);
+  const [wallNow, setWallNow] = useState(Date.now());
+
+  useEffect(() => {
+    const unsubscribe = runtime.subscribeTaskGeneration(setGeneration);
+    const clock = window.setInterval(() => setWallNow(Date.now()), 250);
+    return () => {
+      unsubscribe();
+      window.clearInterval(clock);
+    };
+  }, []);
 
   const tasks = useMemo(() => {
     const byState = (s: string) => {
+      if (s === 'QUEUED') return snap.tasks.filter((t) => !t.assignedTo && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(t.state));
       if (s === 'ACTIVE') return snap.tasks.filter((t) => t.assignedTo && t.state !== 'COMPLETED' && t.state !== 'FAILED');
       return snap.tasks.filter((t) => t.state === s);
     };
@@ -54,10 +67,33 @@ export function Tasks() {
   }, [snap.tasks]);
 
   const breached = snap.tasks.filter((t) => t.state !== 'COMPLETED' && snap.time - t.createdAt > t.slaSeconds).length;
+  const allocationEvents = snap.events.filter((event) => event.source === 'ALLOCATOR' || event.category === 'TASK').slice(0, 5);
 
   return (
     <div className="flex min-h-0 flex-1 gap-3 bg-void p-3">
       <div className="flex min-w-0 flex-1 flex-col gap-3">
+        <div className="panel flex shrink-0 items-center gap-3 px-3 py-2">
+          <button
+            className="btn btn-primary shrink-0"
+            disabled={generation.status === 'RUNNING'}
+            onClick={() => runtime.startTaskGeneration()}
+          >
+            <Package size={12} />
+            {generation.status === 'RUNNING' ? 'GENERATING…' : 'GENERATE TASKS'}
+          </button>
+          {generation.status === 'RUNNING' ? (
+            <span className="text-2xs text-txt2" aria-live="polite">
+              Generating Tasks: {generation.created}/{generation.target} · next task in {Math.max(0, Math.ceil(((generation.nextAt ?? wallNow) - wallNow) / 1000))}s
+            </span>
+          ) : generation.status === 'COMPLETED' ? (
+            <span className="text-2xs text-ok">Batch complete: {generation.created}/{generation.target} tasks created.</span>
+          ) : generation.status === 'FAILED' ? (
+            <span className="text-2xs text-danger" role="alert">Generation stopped at {generation.created}/{generation.target}: {generation.error}</span>
+          ) : (
+            <span className="text-2xs text-txt3">Creates five tasks, one every 10 seconds, starting 10 seconds after you click.</span>
+          )}
+        </div>
+
         {/* ── summary ─────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-5 gap-3">
           <div className="panel p-3"><Stat label="OPEN AUCTIONS" value={`${counts.QUEUED}`} tone="analysis" /></div>
@@ -80,10 +116,11 @@ export function Tasks() {
           right={<Segmented size="xs" value={filter} onChange={setFilter} options={FILTERS.map((f) => ({ id: f.id as string, label: f.label }))} />}
         >
           <div className="h-full overflow-auto">
-            <table className="w-full min-w-[860px]">
+            <table className="w-full min-w-[930px]">
               <thead className="sticky top-0 z-10 bg-panel">
                 <tr>
                   <th className="th text-left">TASK</th>
+                  <th className="th text-center">SOURCE</th>
                   <th className="th text-center">PRI</th>
                   <th className="th text-center">STATE</th>
                   <th className="th text-left">ROUTE</th>
@@ -115,8 +152,13 @@ export function Tasks() {
                         )}
                       </td>
                       <td className="px-2 py-1.5 text-center">
+                        <Chip tone={t.source === 'MANUAL' ? 'danger' : t.source === 'GENERATED' ? 'nav' : 'default'}>
+                          {t.source === 'MANUAL' ? 'MANUAL ORDER' : t.source}
+                        </Chip>
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
                         <Chip tone={t.priority === 'CRITICAL' ? 'danger' : t.priority === 'HIGH' ? 'warn' : 'default'}>
-                          {t.priority[0]}
+                          {t.priority === 'CRITICAL' ? 'CRIT' : t.priority}
                         </Chip>
                       </td>
                       <td className="px-2 py-1.5 text-center">
@@ -124,6 +166,11 @@ export function Tasks() {
                           <Dot tone={STATE_TONE[t.state] ?? 'default'} pulse={t.state === 'QUEUED'} />
                           {t.state}
                         </Chip>
+                        {(t.state === 'ANNOUNCED' || t.state === 'QUEUED' || t.state === 'REASSIGNING') && (
+                          <div className="mt-1 max-w-[180px] text-left text-3xs text-warn">
+                            {t.allocationReason ?? 'Awaiting allocation evaluation.'}
+                          </div>
+                        )}
                       </td>
                       <td className="max-w-[260px] px-2 py-1.5">
                         <div className="flex items-center gap-1.5 truncate text-[11px] text-txt2">
@@ -162,6 +209,14 @@ export function Tasks() {
         </Panel>
 
         <div className="flex shrink-0 items-center gap-3 rounded border border-line2 bg-abyss/40 px-3 py-2">
+          <div className="max-h-[58px] w-[290px] shrink-0 overflow-y-auto border-r border-line pr-3">
+            <div className="mb-1 text-3xs font-semibold uppercase tracking-wider text-nav">LIVE ALLOCATION FEED</div>
+            {allocationEvents.length ? allocationEvents.map((event) => (
+              <div key={event.id} className="truncate text-3xs text-txt2" title={event.message}>
+                <span className="mono text-txt3">{event.t.toFixed(1)}s</span> {event.message}
+              </div>
+            )) : <div className="text-3xs text-txt3">No task events recorded yet.</div>}
+          </div>
           <Timer size={12} className="text-txt3" />
           <span className="text-3xs leading-relaxed text-txt3">
             Allocation is a market, not a queue. The task board announces; every eligible agent
@@ -178,7 +233,7 @@ export function Tasks() {
               if (t) {
                 selectTask(t.id);
                 notify(`${t.id} INJECTED · ANNOUNCED TO FLEET`, 'SUCCESS');
-              }
+              } else notify('No unreserved package is available for a manual order.', 'WARNING');
             }}
           >
             <Package size={12} />

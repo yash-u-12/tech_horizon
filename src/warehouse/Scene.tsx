@@ -21,11 +21,11 @@ import { tx, tz } from './shared';
 import { WORLD_H, WORLD_W } from '@/simulation/environment/warehouse';
 
 function GroundPicker() {
-  const { clickMode, placeFrom, setPlaceFrom } = useNexus();
+  const { clickMode, placeFrom, setPlaceFrom, pendingOrder, setPendingOrder } = useNexus();
   const { raycaster, camera, gl } = useThree();
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
 
-  if (clickMode === 'SELECT' && !placeFrom) return null;
+  if (clickMode === 'SELECT' && !placeFrom && !pendingOrder) return null;
 
   const toWorld = (e: any) => {
     const rect = gl.domElement.getBoundingClientRect();
@@ -57,35 +57,22 @@ function GroundPicker() {
             useNexus.getState().notify(`OBSTACLE PLACED AT ${w.x.toFixed(1)}, ${w.y.toFixed(1)}`, 'WARNING');
             useNexus.getState().setClickMode('SELECT');
           } else if (clickMode === 'PLACE_TASK') {
+            const location = eng.normalizeManualLocation(w);
+            if (!location) {
+              useNexus.getState().notify('Choose a clear warehouse cell outside shelves and obstacles.', 'WARNING');
+              return;
+            }
             if (!placeFrom) {
-              setPlaceFrom(w);
+              setPlaceFrom(location);
               useNexus.getState().notify('PICK LOCATION SET · NOW SELECT A DESTINATION', 'INFO');
             } else {
-              const t = eng.tasks.createExplicit(
-                eng.time,
-                placeFrom,
-                `MANUAL ${placeFrom.x.toFixed(1)},${placeFrom.y.toFixed(1)}`,
-                w,
-                `MANUAL ${w.x.toFixed(1)},${w.y.toFixed(1)}`,
-                'HIGH',
-              );
-              eng.bus.broadcast(
-                {
-                  kind: 'TASK_ANNOUNCE',
-                  from: 'OPERATOR',
-                  taskId: t.id,
-                  t: eng.time,
-                  priority: t.priority,
-                  from_: { x: t.from.x, y: t.from.y },
-                  to_: { x: t.to.x, y: t.to.y },
-                  requiresLidar: true,
-                  weightKg: t.weightKg,
-                  sla: t.slaSeconds,
-                },
-                eng.time,
-              );
-              useNexus.getState().notify(`${t.id} CREATED · ANNOUNCED TO FLEET`, 'SUCCESS');
-              useNexus.getState().selectTask(t.id);
+              const error = eng.validateManualOrder(placeFrom, location);
+              if (error) {
+                useNexus.getState().notify(error, 'WARNING');
+                return;
+              }
+              setPendingOrder({ pickup: placeFrom, destination: location });
+              useNexus.getState().notify('ROUTE VALID · REVIEW AND CONFIRM THE CRITICAL ORDER', 'INFO');
               useNexus.getState().setClickMode('SELECT');
             }
           }
@@ -101,11 +88,9 @@ function GroundPicker() {
             <ringGeometry args={[0.7, 0.9, 24]} />
             <meshBasicMaterial color="#38BDF8" transparent opacity={0.85} side={THREE.DoubleSide} depthWrite={false} />
           </mesh>
-          {placeFrom && (
-            <Line2D a={placeFrom} b={hover} />
-          )}
         </group>
       )}
+      {hover && placeFrom && <Line2D a={placeFrom} b={hover} />}
       {placeFrom && (
         <group position={[tx(placeFrom.x), 0.08, tz(placeFrom.y)]}>
           <mesh rotation={[-Math.PI / 2, 0, 0]}>
@@ -119,6 +104,23 @@ function GroundPicker() {
           </Html>
         </group>
       )}
+      {pendingOrder && (
+        <>
+          <group position={[tx(pendingOrder.pickup.x), 0.08, tz(pendingOrder.pickup.y)]}>
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[0.36, 0.48, 24]} />
+              <meshBasicMaterial color="#34D399" transparent opacity={0.9} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+          </group>
+          <group position={[tx(pendingOrder.destination.x), 0.08, tz(pendingOrder.destination.y)]}>
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[0.36, 0.48, 24]} />
+              <meshBasicMaterial color="#38BDF8" transparent opacity={0.9} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+          </group>
+          <Line2D a={pendingOrder.pickup} b={pendingOrder.destination} />
+        </>
+      )}
     </>
   );
 }
@@ -126,8 +128,8 @@ function GroundPicker() {
 function Line2D({ a, b }: { a: { x: number; y: number }; b: { x: number; y: number } }) {
   const obj = useMemo(() => {
     const g = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(tx(a.x) - tx(b.x), 0, tz(a.y) - tz(b.y)),
-      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(tx(a.x), 0.05, tz(a.y)),
+      new THREE.Vector3(tx(b.x), 0.05, tz(b.y)),
     ]);
     const m = new THREE.LineBasicMaterial({ color: '#38BDF8', transparent: true, opacity: 0.7 });
     return new THREE.Line(g, m);
@@ -144,6 +146,8 @@ function WarehouseContents() {
   const hoverRobot = useNexus((s) => s.hoverRobot);
   const followId = useNexus((s) => s.followId);
   const cameraMode = useNexus((s) => s.cameraMode);
+  const cameraGesture = useNexus((s) => s.cameraGesture);
+  const cameraPinchZoom = useNexus((s) => s.cameraPinchZoom);
 
   const engine = runtime.engine;
   const warehouse = engine.warehouse;
@@ -171,8 +175,14 @@ function WarehouseContents() {
       {layers.traffic && <TrafficMarkers snap={snap} />}
       <GroundPicker />
 
-      {showPaths &&
-        engine.agents.map((a) => <RobotPaths key={`p-${a.state.id}`} state={a.state} showTrail={layers.trails} />)}
+      {engine.agents.map((a) => (showPaths || a.state.id === followId) && (
+        <RobotPaths
+          key={`p-${a.state.id}`}
+          state={a.state}
+          showTrail={layers.trails}
+          highlighted={a.state.id === followId}
+        />
+      ))}
 
       {engine.agents.map((a) => (
         <RobotUnit
@@ -191,7 +201,7 @@ function WarehouseContents() {
         <PerceptionOverlay agent={selectedAgent} showOccupancy={layers.occupancy} showLinks />
       )}
 
-      <CameraRig mode={cameraMode} followPose={followPose} resetKey={0} />
+      <CameraRig mode={cameraMode} gesture={cameraGesture} pinchZoom={cameraPinchZoom} followPose={followPose} resetKey={0} />
       <AdaptiveDpr pixelated />
     </>
   );

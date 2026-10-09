@@ -2,15 +2,16 @@ import clsx from 'clsx';
 import { useEffect, useState } from 'react';
 import {
   Boxes,
-  Camera,
   Crosshair,
   Eye,
   Gauge,
   Grid3x3,
+  Hand,
   Layers,
   MapPin,
   Maximize2,
   MousePointerClick,
+  Move,
   Pause,
   Play,
   RotateCcw,
@@ -19,6 +20,7 @@ import {
   Trash2,
   TriangleAlert,
   Zap,
+  ZoomIn,
 } from 'lucide-react';
 import { runtime } from '@/simulation/runtime';
 import { useNexus, type CameraMode, type LayerState } from '@/store/useNexus';
@@ -30,6 +32,10 @@ export function TopBar() {
   const snap = useNexus((s) => s.snap);
   const setCameraMode = useNexus((s) => s.setCameraMode);
   const cameraMode = useNexus((s) => s.cameraMode);
+  const cameraGesture = useNexus((s) => s.cameraGesture);
+  const cameraPinchZoom = useNexus((s) => s.cameraPinchZoom);
+  const setCameraGesture = useNexus((s) => s.setCameraGesture);
+  const setCameraPinchZoom = useNexus((s) => s.setCameraPinchZoom);
   const layers = useNexus((s) => s.layers);
   const toggleLayer = useNexus((s) => s.toggleLayer);
   const clickMode = useNexus((s) => s.clickMode);
@@ -170,6 +176,36 @@ export function TopBar() {
           { id: 'FOLLOW', label: 'FOLLOW', title: 'Follow the selected robot' },
         ]}
       />
+
+      <div className="flex items-center gap-1" aria-label="Simulation camera gestures">
+        <button
+          className={clsx('btn', cameraGesture === 'DRAG' && 'btn-primary')}
+          title="Left drag rotates the camera; right drag pans"
+          aria-pressed={cameraGesture === 'DRAG'}
+          onClick={() => setCameraGesture('DRAG')}
+        >
+          <Move size={12} />
+          DRAG
+        </button>
+        <button
+          className={clsx('btn', cameraGesture === 'PAN' && 'btn-primary')}
+          title="Swap drag actions: left drag pans; right drag rotates"
+          aria-pressed={cameraGesture === 'PAN'}
+          onClick={() => setCameraGesture('PAN')}
+        >
+          <Hand size={12} />
+          PAN
+        </button>
+        <button
+          className={clsx('btn', cameraPinchZoom && 'btn-primary')}
+          title="Enable or disable touch pinch and mouse wheel zoom"
+          aria-pressed={cameraPinchZoom}
+          onClick={() => setCameraPinchZoom(!cameraPinchZoom)}
+        >
+          <ZoomIn size={12} />
+          PINCH
+        </button>
+      </div>
 
       <LayerMenu layers={layers} toggleLayer={toggleLayer} />
       <button className="btn-icon" title="Reset camera" onClick={() => setCameraMode(cameraMode)}>

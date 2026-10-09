@@ -34,13 +34,13 @@ import { mulberry32 } from '../core/rng';
 export const WORLD_W = 44;
 export const WORLD_H = 33.5;
 
-const RACK_W = 2.0;
-const RACK_L = 5.0;
-const AISLE = 2.5;
-const CROSS_AISLE = 2.5;
-
-const STORAGE_X0 = 9.0;
-const ROW_Y = [3.0, 10.5, 18.0, 25.5];
+export const WAREHOUSE_LAYOUT = {
+  rackWidth: 2.0,
+  rackLength: 5.0,
+  rackColumns: [9.5, 16.0, 22.5, 29.0],
+  rackRows: [3.0, 13.0, 23.0],
+} as const;
+const { rackWidth: RACK_W, rackLength: RACK_L } = WAREHOUSE_LAYOUT;
 
 const PACKAGES_PER_RACK = 4;
 
@@ -132,21 +132,12 @@ export class Warehouse {
       this.grid.blockRect(px - 0.25, py - 0.25, 0.5, 0.5);
     });
 
-    // storage rack columns
-    let x = STORAGE_X0;
-    let col = 0;
-    const rackCols: { x: number; col: number }[] = [];
-    while (x + RACK_W <= 34.0) {
-      rackCols.push({ x, col });
-      x += RACK_W + AISLE;
-      col++;
-    }
-
-    for (const { x: rx, col: c } of rackCols) {
-      // split the column into rack segments separated by cross aisles
-      let y = ROW_Y[0];
-      let row = 0;
-      while (y + RACK_L <= 30.5) {
+    // Three rows by four columns. The 4.5 m column gaps and 5 m row gaps
+    // leave broad, connected cross-aisles for the 0.5 m navigation grid.
+    for (let c = 0; c < WAREHOUSE_LAYOUT.rackColumns.length; c++) {
+      const rx = WAREHOUSE_LAYOUT.rackColumns[c];
+      for (let row = 0; row < WAREHOUSE_LAYOUT.rackRows.length; row++) {
+        const y = WAREHOUSE_LAYOUT.rackRows[row];
         const id = `RACK-${String.fromCharCode(65 + c)}${row + 1}`;
         const eastFace = c % 2 === 0;
         const pickX = eastFace ? rx + RACK_W + 0.75 : rx - 0.75;
@@ -165,8 +156,6 @@ export class Warehouse {
         this.objects.push(obj);
         this.racks.push(obj);
         this.grid.blockRect(rx, y, RACK_W, RACK_L);
-        y += RACK_L + CROSS_AISLE;
-        row++;
       }
     }
 
@@ -181,8 +170,6 @@ export class Warehouse {
     // pallet stacks (semi-static clutter) — these make narrow-aisle traffic real
     const palletSpots: [number, number][] = [
       [5.2, 14.5], [5.2, 19.5], [38.2, 14.5], [38.2, 19.5],
-      [11.6, 9.2], [20.6, 9.2], [29.6, 9.2],
-      [11.6, 24.2], [20.6, 24.2], [29.6, 24.2],
     ];
     palletSpots.forEach(([px, py], i) => {
       this.objects.push({ id: `PALLET-${i + 1}`, kind: 'PALLET', x: px, y: py, w: 1.0, h: 1.0, height: 0.7 });

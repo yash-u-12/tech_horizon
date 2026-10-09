@@ -1,8 +1,9 @@
 import { SimulationEngine, SIM_DT } from '../src/simulation/engine';
 import type { EngineConfig } from '../src/simulation/engine';
 
-const cfg: EngineConfig = { seed: 20261007, robotCount: 6, orderInterval: 7, maxActiveTasks: 7 };
+const cfg: EngineConfig = { seed: 20261007, robotCount: 6 };
 const e = new SimulationEngine(cfg);
+for (let i = 0; i < 4; i++) e.createGeneratedOrder();
 const traceId = process.argv[2] ?? 'R01';
 const seconds = Number(process.argv[3] ?? 60);
 

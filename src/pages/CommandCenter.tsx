@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import clsx from 'clsx';
-import { Activity, Boxes, Cpu, Radio, Timer, Zap } from 'lucide-react';
+import { Activity, Boxes, Check, Cpu, Radio, Timer, X, Zap } from 'lucide-react';
 import { Scene } from '@/warehouse/Scene';
 import { useNexus } from '@/store/useNexus';
 import { RobotInspector } from '@/components/RobotInspector';
@@ -17,6 +17,8 @@ export function CommandCenter() {
   const selectRobot = useNexus((s) => s.selectRobot);
   const hoverRobot = useNexus((s) => s.hoverRobot);
   const hoveredRobot = useNexus((s) => s.hoveredRobot);
+  const pendingOrder = useNexus((s) => s.pendingOrder);
+  const setPendingOrder = useNexus((s) => s.setPendingOrder);
 
   const throughput = useMemo(() => runtime.throughputHistory(), [snap.tick]);
 
@@ -26,6 +28,44 @@ export function CommandCenter() {
   return (
     <div className="relative min-h-0 flex-1 overflow-hidden bg-void">
       <Scene />
+
+      {pendingOrder && (
+        <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-void/65 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-[420px] rounded-md border border-line2 bg-panel p-4 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="label">CONFIRM MANUAL ORDER</div>
+                <div className="mt-1 text-2xs text-txt3">The route is valid on the current warehouse navigation grid.</div>
+              </div>
+              <Chip tone="danger">CRITICAL</Chip>
+              <button className="btn-icon" title="Cancel order" onClick={() => setPendingOrder(null)}><X size={13} /></button>
+            </div>
+            <div className="my-3 space-y-2 rounded border border-line2 bg-abyss/60 p-3">
+              <div className="flex justify-between gap-3 text-2xs"><span className="text-ok">PICKUP</span><span className="mono text-txt">{pendingOrder.pickup.x.toFixed(1)}, {pendingOrder.pickup.y.toFixed(1)}</span></div>
+              <div className="flex justify-between gap-3 text-2xs"><span className="text-nav">DESTINATION</span><span className="mono text-txt">{pendingOrder.destination.x.toFixed(1)}, {pendingOrder.destination.y.toFixed(1)}</span></div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="btn" onClick={() => setPendingOrder(null)}>CANCEL</button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  const result = runtime.engine.createManualOrder(pendingOrder.pickup, pendingOrder.destination);
+                  if (!result.task) {
+                    useNexus.getState().notify(result.error ?? 'The order could not be created.', 'WARNING');
+                    return;
+                  }
+                  runtime.emit();
+                  useNexus.getState().selectTask(result.task.id);
+                  setPendingOrder(null);
+                  useNexus.getState().notify(`${result.task.id} CONFIRMED · CRITICAL PRIORITY · ALLOCATION STARTED`, 'SUCCESS');
+                }}
+              >
+                <Check size={12} /> CONFIRM ORDER
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── top-left: fleet readiness ─────────────────────────────────────── */}
       <div className="pointer-events-auto absolute left-3 top-3 z-10 w-[286px] rounded-md border border-line2 bg-panel/95 shadow-xl backdrop-blur-sm">

@@ -43,6 +43,7 @@ import { deadlockBreaker, predictConflicts, rightOfWay, safetyBrake, type SelfSn
 import { computeBid, type AnnouncePayload } from '../tasks/allocation';
 import { SimulationBackend, PhysicalBackend, makeTwin, type BackendWorldView, type RobotExecutionBackend } from '../robots/backend';
 import { makeBindingState } from '../robots/binding';
+import { PICK_DURATION_S, DROP_DURATION_S } from '../config';
 import { WORLD_W, WORLD_H } from '../environment/warehouse';
 import { clamp, dist, ema, wrapAngle } from '../core/math';
 import { entityRng, type Rng } from '../core/rng';
@@ -77,8 +78,6 @@ const CRUISE = 0.85;
 const REPLAN_CHECK_INTERVAL = 1.1;
 const INTENT_INTERVAL = 0.45;
 const TRAIL_INTERVAL = 0.35;
-const PICK_DWELL = 1.3;
-const DROP_DWELL = 1.0;
 const ARRIVE_EPS = 0.5;
 const MAX_TRAIL = 220;
 
@@ -323,7 +322,7 @@ export class RobotAgent {
           s.taskPhase = 'PICKING';
           s.status = 'PICKING';
           s.navState = 'ARRIVED';
-          this.pickTimer = PICK_DWELL;
+          this.pickTimer = PICK_DURATION_S;
           this.dropPlan('ARRIVED AT PICK');
           return this.commit(world, 'PICK', { type: 'STOP', v: 0, w: 0 }, `AT PICK FACE · ${task.from.label}`, [
             { label: 'TASK', value: task.id },
@@ -370,7 +369,7 @@ export class RobotAgent {
           s.taskPhase = 'DROPPING';
           s.status = 'DROPPING';
           s.navState = 'ARRIVED';
-          this.dropTimer = DROP_DWELL;
+          this.dropTimer = DROP_DURATION_S;
           this.dropPlan('ARRIVED AT DROP');
           return this.commit(world, 'DROP', { type: 'STOP', v: 0, w: 0 }, `AT STATION · ${task.to.label}`, [
             { label: 'TASK', value: task.id },
@@ -1090,7 +1089,10 @@ export class RobotAgent {
         case 'TASK_ANNOUNCE': {
           if (this.lastAnnounceSeen.has(`${m.taskId}:${Math.floor(m.t * 4)}`)) break;
           this.lastAnnounceSeen.add(`${m.taskId}:${Math.floor(m.t * 4)}`);
-          if (s.taskId || s.status === 'OFFLINE') break;
+          if (s.status === 'OFFLINE') {
+            world.tasks.submitEvaluation(s.id, m.taskId, null, 'OFFLINE', world.time);
+            break;
+          }
           const ann: AnnouncePayload = {
             taskId: m.taskId,
             priority: m.priority,
@@ -1099,9 +1101,28 @@ export class RobotAgent {
             requiresLidar: m.requiresLidar,
             weightKg: m.weightKg,
           };
-          const dToPick = dist(s.pose.x, s.pose.y, ann.from.x, ann.from.y);
-          const dPickToDrop = dist(ann.from.x, ann.from.y, ann.to.x, ann.to.y);
-          const { bid, reason } = computeBid(s, this.context!, ann, dToPick, dPickToDrop, CRUISE);
+          // Use the same A* planner and agent-specific costmap used for motion
+          // to price both legs of the job. A geometrically close robot must not
+          // win when its actual route is blocked or much longer.
+          const toPickup = planAStar({
+            grid: world.grid,
+            start: s.pose,
+            goal: ann.from,
+            view: this.buildCostView(world, ann.from),
+            speed: CRUISE,
+          });
+          const pickupToDrop = toPickup.found
+            ? planAStar({
+                grid: world.grid,
+                start: ann.from,
+                goal: ann.to,
+                view: this.buildCostView(world, ann.to),
+                speed: CRUISE,
+              })
+            : null;
+          const { bid, reason } = toPickup.found && pickupToDrop?.found
+            ? computeBid(s, this.context!, ann, toPickup.length, pickupToDrop.length, CRUISE)
+            : { bid: null, reason: 'NO FEASIBLE ROUTE' };
           world.tasks.submitEvaluation(s.id, m.taskId, bid, reason, world.time);
           if (bid) {
             this.broadcast(world, { kind: 'TASK_BID', from: s.id, taskId: m.taskId, t: world.time, bid });

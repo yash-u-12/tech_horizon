@@ -310,8 +310,9 @@ export const SAFETY = {
 export const CHARGE_RATE = 0.030 // battery fraction per sim second while charging
 export const DISCHARGE_IDLE = 0.00035
 export const DISCHARGE_MOVE = 0.00105 // per sim second at full speed (~16 min of driving per charge)
-export const PICK_DURATION_S = 3.2
-export const DROP_DURATION_S = 2.6
+// One package handling cycle (pickup plus drop) is capped at three seconds.
+export const PICK_DURATION_S = 1.5
+export const DROP_DURATION_S = 1.5
 export const DOCK_RADIUS_M = 1.25
 export const TASK_ARRIVAL_INTERVAL_S = 11
 export const MAX_ACTIVE_TASKS = 6

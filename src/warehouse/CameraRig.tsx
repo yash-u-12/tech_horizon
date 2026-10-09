@@ -8,6 +8,8 @@ import type { CameraMode } from '@/store/useNexus';
 
 interface Props {
   mode: CameraMode;
+  gesture: 'DRAG' | 'PAN';
+  pinchZoom: boolean;
   followPose: { x: number; y: number } | null;
   resetKey: number;
 }
@@ -18,7 +20,7 @@ const VIEWS: Record<string, { pos: [number, number, number]; target: [number, nu
   ISO: { pos: [34, 24, -34], target: [0, 0, 0] },
 };
 
-export function CameraRig({ mode, followPose, resetKey }: Props) {
+export function CameraRig({ mode, gesture, pinchZoom, followPose, resetKey }: Props) {
   const controls = useRef<OrbitControlsImpl>(null);
   const { camera } = useThree();
   const desired = useRef(new THREE.Vector3());
@@ -39,15 +41,12 @@ export function CameraRig({ mode, followPose, resetKey }: Props) {
       const px = tx(followPose.x);
       const pz = tz(followPose.y);
       desiredTarget.current.set(px, 0.6, pz);
-      // keep the operator's chosen orbit direction but re-anchor behind the unit
-      const dir = new THREE.Vector3().subVectors(camera.position, c.target);
-      if (dir.lengthSq() < 1) dir.set(9, 11, 9);
-      dir.y = Math.max(dir.y, 6);
-      dir.setLength(15);
-      desired.current.copy(desiredTarget.current).add(dir);
       const k = 1 - Math.pow(0.0016, dt);
-      camera.position.lerp(desired.current, k);
-      c.target.lerp(desiredTarget.current, k);
+      // Translate the camera and target together. This follows the robot while
+      // preserving the operator's current orbit, zoom, and pan adjustments.
+      desired.current.copy(desiredTarget.current).sub(c.target).multiplyScalar(k);
+      camera.position.add(desired.current);
+      c.target.add(desired.current);
       c.update();
       return;
     }
@@ -72,6 +71,14 @@ export function CameraRig({ mode, followPose, resetKey }: Props) {
     <OrbitControls
       ref={controls}
       makeDefault
+      mouseButtons={{
+        LEFT: gesture === 'PAN' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: gesture === 'PAN' ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN,
+      }}
+      enableRotate
+      enablePan
+      enableZoom={pinchZoom}
       enableDamping
       dampingFactor={0.075}
       minDistance={6}

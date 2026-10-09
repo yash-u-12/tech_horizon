@@ -77,7 +77,7 @@ export function ScenarioBar() {
           if (t) {
             useNexus.getState().selectTask(t.id);
             notify(`${t.id} INJECTED · ANNOUNCED TO FLEET`, 'SUCCESS');
-          }
+          } else notify('No unreserved package is available for a manual order.', 'WARNING');
           runtime.emit();
         }}
       >

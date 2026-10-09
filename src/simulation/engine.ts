@@ -17,12 +17,13 @@
 import { Warehouse, WORLD_W, WORLD_H } from './environment/warehouse';
 import type { OccupancyGrid } from './environment/grid';
 import { CommsBus } from './communication/bus';
-import { TaskManager, STATIONS } from './tasks/taskManager';
+import { TaskManager, STATIONS, BID_WINDOW } from './tasks/taskManager';
 import { RobotAgent, type AgentWorld, type TaskAccess } from './agents/agent';
 import { HardwareRegistry, DEFAULT_AGENT_CAPS, LITE_AGENT_CAPS } from './robots/hardware';
 import { MockPhysicalRobotInterface, type RobotInterface } from './robots/interfaces';
 import { BindingController, makeBindingState } from './robots/binding';
 import { PhysicalBackend, SimulationBackend } from './robots/backend';
+import { planAStar } from './planning/astar';
 import { SCENARIOS, type Scenario, type ScenarioContext } from './scenarios/scenarios';
 import {
   makeRobotState,
@@ -55,8 +56,6 @@ export interface EngineConfig {
   robotCount: number;
   /** ids that start bound to hardware (default: R01 → P01) */
   initialBindings?: { robotId: string; hardwareId: string }[];
-  orderInterval: number;
-  maxActiveTasks: number;
 }
 
 export interface Snapshot {
@@ -137,7 +136,7 @@ export class SimulationEngine {
     this.warehouse = new Warehouse({ seed: cfg.seed });
     this.grid = this.warehouse.grid;
     this.bus = new CommsBus(mulberry32(cfg.seed ^ 0x51ed2701));
-    this.tasks = new TaskManager({ seed: cfg.seed, orderInterval: cfg.orderInterval, maxActiveTasks: cfg.maxActiveTasks });
+    this.tasks = new TaskManager({ seed: cfg.seed });
     this.registry = new HardwareRegistry();
     this.registry.createMockFleet(cfg.seed, 3);
     this.binding = new BindingController(this.registry);
@@ -145,7 +144,12 @@ export class SimulationEngine {
     this.taskAccess = {
       get: (id) => this.tasks.byId(id),
       openAnnouncements: () => this.tasks.tasks.filter((t) => t.state === 'ANNOUNCED'),
-      submitEvaluation: (robotId, taskId, bid, reason, at) => this.tasks.submitEvaluation({ robotId, taskId, bid, reason, at }),
+      submitEvaluation: (robotId, taskId, bid, reason, at) => {
+        this.tasks.submitEvaluation({ robotId, taskId, bid, reason, at });
+        this.emit('INFO', 'ALLOCATOR', 'TASK', bid?.accepted
+          ? `${taskId} · ${robotId} ELIGIBLE · ROUTE ${bid.distance.toFixed(1)} m · COST ${bid.cost.toFixed(2)}`
+          : `${taskId} · ${robotId} REJECTED · ${reason ?? 'INELIGIBLE'}`, { taskId, robotId });
+      },
       begin: (taskId, now) => this.tasks.begin(taskId, now),
       complete: (taskId, now) => this.tasks.complete(taskId, now, this.warehouse),
       requeue: (taskId, reason) => {
@@ -153,7 +157,7 @@ export class SimulationEngine {
         if (!t) return;
         // give the package back so someone else can fetch it
         this.tasks.releasePackage(taskId, this.warehouse);
-        this.tasks.reQueue(taskId, reason);
+        this.tasks.reQueue(taskId, reason, this.time);
         this.emit('WARNING', 'TASK', 'TASK', `${taskId} RETURNED TO AUCTION · ${reason}`, { taskId, robotId: t.assignedTo ?? undefined });
       },
     };
@@ -176,9 +180,6 @@ export class SimulationEngine {
     this.spawnAgents();
     this.applyInitialBindings();
     this.buildNodes();
-
-    // seed a few tasks so the world is alive immediately
-    for (let i = 0; i < Math.min(4, cfg.robotCount); i++) this.forceOrder();
 
     this.snapshot = this.buildSnapshot();
   }
@@ -310,18 +311,7 @@ export class SimulationEngine {
     this.world.sensorsDegraded = this.comms.loss > 0.25;
     this.syncRobotArray();
 
-    // 5. orders → announcements
-    const active = this.tasks.tasks.filter((t) => t.state === 'ANNOUNCED' || t.state === 'ASSIGNED' || t.state === 'IN_PROGRESS' || t.state === 'REASSIGNING').length;
-    const created = this.tasks.tickOrders(this.time, this.warehouse, active);
-    for (const t of created) {
-      this.bus.broadcast(
-        { kind: 'TASK_ANNOUNCE', from: 'WMS', taskId: t.id, t: this.time, priority: t.priority, from_: { x: t.from.x, y: t.from.y }, to_: { x: t.to.x, y: t.to.y }, requiresLidar: t.requiresLidar, weightKg: t.weightKg, sla: t.slaSeconds },
-        this.time,
-      );
-      this.emit('INFO', 'WMS', 'TASK', `${t.id} ${t.type.replace('_', ' ')} · ${t.from.label} → ${t.to.label} · ${t.priority}`, { taskId: t.id });
-    }
-
-    // 6. agent cognition: PERCEIVE → CONTEXT → DECIDE
+    // 5. agent cognition: PERCEIVE → CONTEXT → DECIDE
     for (const a of this.agents) {
       if (a.state.status === 'OFFLINE') {
         // a dead robot still occupies space; keep its state stable
@@ -339,20 +329,35 @@ export class SimulationEngine {
       a.decide(this.world);
     }
 
-    // 7. binding transitions (§47A) — may swap an agent's execution body
+    // 6. binding transitions (§47A) — may swap an agent's execution body
     const swaps = this.binding.tick(this.time, this.world.robots);
     for (const s of swaps) this.performBackendSwap(s);
     for (const log of this.binding.log.splice(0)) {
       this.emit(log.level, 'TWIN', 'TWIN', log.message, { robotId: log.robotId });
     }
 
-    // 8. task board: run the public winner rule, then assign
+    // Record an honest reason for any candidate that did not submit a bid.
+    this.fillMissingEvaluations();
+
+    // 7. task board: run the public winner rule, then assign
     const awards = this.tasks.resolveAnnouncements(this.time);
     for (const { task, winner, bids } of awards) {
       const agent = this.agents.find((a) => a.state.id === winner);
-      this.emit('SUCCESS', 'TASK', 'TASK', `${task.id} AWARDED TO ${winner} · ${bids.filter((b) => b.accepted).length}/${bids.length} CANDIDATES`, { taskId: task.id, robotId: winner });
-      if (agent) agent.assignTask(this.world, task.id);
-      else this.tasks.reQueue(task.id, 'WINNER UNAVAILABLE');
+      const eligible = agent &&
+        !agent.state.taskId &&
+        agent.state.status !== 'OFFLINE' &&
+        agent.state.status !== 'ESTOP' &&
+        agent.state.status !== 'CHARGING' &&
+        agent.state.status !== 'BLOCKED' &&
+        agent.state.status !== 'BINDING' &&
+        (agent.state.binding.stage === 'IDLE' || agent.state.binding.stage === 'ACTIVE');
+      if (eligible) {
+        agent.assignTask(this.world, task.id);
+        this.emit('SUCCESS', 'ALLOCATOR', 'TASK', `${task.id} ASSIGNED TO ${winner} · ${bids.filter((b) => b.accepted).length}/${bids.length} ELIGIBLE CANDIDATES`, { taskId: task.id, robotId: winner });
+      } else {
+        this.tasks.reQueue(task.id, 'WINNER NO LONGER AVAILABLE', this.time);
+        this.emit('WARNING', 'ALLOCATOR', 'TASK', `${task.id} assignment rejected · winner became unavailable; returned to queue`, { taskId: task.id, robotId: winner });
+      }
     }
     this.tasks.tickReassignments(this.time);
     for (const t of this.tasks.takeAnnouncements()) {
@@ -389,6 +394,31 @@ export class SimulationEngine {
     const arr = this.world.robots;
     arr.length = 0;
     for (const a of this.agents) arr.push(a.state);
+  }
+
+  private fillMissingEvaluations() {
+    for (const task of this.tasks.tasks) {
+      if (task.state !== 'ANNOUNCED' || this.time - task.announcedAt < BID_WINDOW) continue;
+      for (const agent of this.agents) {
+        if (this.tasks.evaluations.some((e) => e.taskId === task.id && e.robotId === agent.state.id)) continue;
+        const r = agent.state;
+        const reason = r.status === 'OFFLINE' ? 'Robot offline'
+          : r.status === 'ESTOP' ? 'Emergency stop active'
+            : r.taskId ? `Busy executing ${r.taskId}`
+            : r.status === 'CHARGING' ? 'Robot charging'
+              : r.status === 'BLOCKED' || r.status === 'BINDING' ? `Robot unavailable: ${r.status}`
+                : r.binding.stage !== 'IDLE' && r.binding.stage !== 'ACTIVE' ? `Binding stage ${r.binding.stage}`
+                  : 'No bid received before the auction window closed';
+        this.tasks.submitEvaluation({ robotId: agent.state.id, taskId: task.id, bid: null, reason, at: this.time });
+        this.emit('INFO', 'ALLOCATOR', 'TASK', `${task.id} · ${agent.state.id} REJECTED · ${reason}`, { taskId: task.id, robotId: agent.state.id });
+      }
+    }
+  }
+
+  /** Publish non-tick UI mutations such as a newly submitted manual order. */
+  publishNow() {
+    this.snapshot = this.buildSnapshot();
+    this.listeners.forEach((listener) => listener(this.snapshot));
   }
 
   private collectIntents() {
@@ -703,7 +733,7 @@ export class SimulationEngine {
   }
 
   /** Force an order into the system (demo control). */
-  forceOrder(priority?: Task['priority']): Task | null {
+  forceOrder(): Task | null {
     const pkg = this.warehouse.pickRandomAvailablePackage(this.rng);
     if (!pkg) return null;
     const rack = this.warehouse.rackById(pkg.rackId);
@@ -715,16 +745,75 @@ export class SimulationEngine {
       `${pkg.rackId} · ${pkg.id}`,
       { x: station.x, y: station.y },
       station.name,
-      priority ?? (this.rng() < 0.25 ? 'HIGH' : 'NORMAL'),
+      'CRITICAL',
     );
     pkg.taskId = t.id;
     pkg.state = 'RESERVED';
-    this.bus.broadcast(
-      { kind: 'TASK_ANNOUNCE', from: 'WMS', taskId: t.id, t: this.time, priority: t.priority, from_: { x: t.from.x, y: t.from.y }, to_: { x: t.to.x, y: t.to.y }, requiresLidar: true, weightKg: t.weightKg, sla: t.slaSeconds },
-      this.time,
-    );
-    this.emit('INFO', 'WMS', 'TASK', `${t.id} MANUAL ORDER · ${t.from.label} → ${t.to.label}`, { taskId: t.id });
+    this.tasks.prioritizeOpenTasks(this.time, t.id);
+    this.announceTask(t, 'OPERATOR');
+    for (const pending of this.tasks.takeAnnouncements()) this.announceTask(pending, 'WMS');
+    this.emit('SUCCESS', 'OPERATOR', 'TASK', `${t.id} MANUAL ORDER · CRITICAL · ${t.from.label} → ${t.to.label}`, { taskId: t.id });
     return t;
+  }
+
+  createGeneratedOrder(): Task | null {
+    const task = this.tasks.createGenerated(this.time, this.warehouse);
+    if (!task) return null;
+    this.announceTask(task, 'WMS');
+    this.emit('INFO', 'WMS', 'TASK', `${task.id} GENERATED · ${task.from.label} → ${task.to.label} · ${task.priority}`, { taskId: task.id });
+    return task;
+  }
+
+  createManualOrder(from: { x: number; y: number }, to: { x: number; y: number }): { task: Task | null; error?: string } {
+    const pickup = this.normalizeManualLocation(from);
+    const destination = this.normalizeManualLocation(to);
+    if (!pickup) return { task: null, error: 'Pickup must be on a clear, reachable warehouse cell.' };
+    if (!destination) return { task: null, error: 'Destination must be on a clear, reachable warehouse cell.' };
+    const validationError = this.validateManualOrder(pickup, destination);
+    if (validationError) return { task: null, error: validationError };
+
+    const task = this.tasks.createExplicit(
+      this.time,
+      pickup,
+      `MANUAL PICK ${pickup.x.toFixed(1)}, ${pickup.y.toFixed(1)}`,
+      destination,
+      `MANUAL DROP ${destination.x.toFixed(1)}, ${destination.y.toFixed(1)}`,
+      'CRITICAL',
+      'MANUAL',
+    );
+    this.tasks.prioritizeOpenTasks(this.time, task.id);
+    this.announceTask(task, 'OPERATOR');
+    for (const pending of this.tasks.takeAnnouncements()) this.announceTask(pending, 'WMS');
+    this.emit('SUCCESS', 'OPERATOR', 'TASK', `${task.id} MANUAL PRIORITY ORDER · CRITICAL · QUEUED FOR ALLOCATION`, { taskId: task.id });
+    return { task };
+  }
+
+  normalizeManualLocation(point: { x: number; y: number }) {
+    const cell = this.grid.worldToCell(point.x, point.y);
+    if (!this.grid.inBounds(cell.ix, cell.iy) || this.grid.isBlocked(cell.ix, cell.iy)) return null;
+    return this.grid.cellToWorld(cell.ix, cell.iy);
+  }
+
+  validateManualOrder(from: { x: number; y: number }, to: { x: number; y: number }): string | null {
+    const pickup = this.normalizeManualLocation(from);
+    const destination = this.normalizeManualLocation(to);
+    if (!pickup) return 'Pickup must be on a clear, reachable warehouse cell.';
+    if (!destination) return 'Destination must be on a clear, reachable warehouse cell.';
+    const route = planAStar({ grid: this.grid, start: pickup, goal: destination });
+    if (!route.found) return 'No safe route connects those locations. Choose another destination.';
+    const reachableFromFleet = this.agents.some((agent) =>
+      agent.state.status !== 'OFFLINE' && agent.state.status !== 'ESTOP' &&
+      planAStar({ grid: this.grid, start: agent.state.pose, goal: pickup }).found,
+    );
+    return reachableFromFleet ? null : 'No active robot has a safe route to this pickup location.';
+  }
+
+  private announceTask(task: Task, from: string) {
+    this.bus.broadcast({
+      kind: 'TASK_ANNOUNCE', from, taskId: task.id, t: this.time, priority: task.priority,
+      from_: { x: task.from.x, y: task.from.y }, to_: { x: task.to.x, y: task.to.y },
+      requiresLidar: task.requiresLidar, weightKg: task.weightKg, sla: task.slaSeconds,
+    }, this.time);
   }
 
   /** Place an obstacle at a world point (click-to-place tool). */
@@ -746,7 +835,7 @@ export class SimulationEngine {
     if (!a) return;
     if (a.state.taskId) {
       this.tasks.releasePackage(a.state.taskId, this.warehouse);
-      this.tasks.reQueue(a.state.taskId, reason);
+      this.tasks.reQueue(a.state.taskId, reason, this.time);
     }
     a.fail(reason);
     const hw = a.state.hardwareId;
@@ -938,6 +1027,9 @@ export class SimulationEngine {
   /** Headless run helper for the experiments page. */
   static runHeadless(cfg: EngineConfig, seconds: number, scenarioId?: string, scenarioAt = 12): ExperimentMetrics {
     const e = new SimulationEngine(cfg);
+    // Experiments are explicit operator runs, so seed a controlled workload
+    // for measurement without enabling background order creation in the app.
+    for (let i = 0; i < 4; i++) e.createGeneratedOrder();
     const steps = Math.floor(seconds / SIM_DT);
     const triggerAt = scenarioId ? Math.floor(scenarioAt / SIM_DT) : -1;
     for (let i = 0; i < steps; i++) {

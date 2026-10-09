@@ -8,13 +8,14 @@ import type { EngineConfig } from '../src/simulation/engine';
 const cfg: EngineConfig = {
   seed: 20261007,
   robotCount: 6,
-  orderInterval: 7,
-  maxActiveTasks: 7,
 };
 
 function run(label: string, seconds: number, scenario?: string) {
   const t0 = Date.now();
   const e = new SimulationEngine(cfg);
+  // Seed the headless simulation explicitly; application startup no longer
+  // generates orders without an operator action.
+  for (let i = 0; i < 4; i++) e.createGeneratedOrder();
   const steps = Math.floor(seconds / SIM_DT);
   const triggerAt = scenario ? Math.floor(14 / SIM_DT) : -1;
   let errors = 0;
@@ -73,6 +74,11 @@ function run(label: string, seconds: number, scenario?: string) {
 console.log('NEXUS simulation core — headless validation');
 console.log('==========================================');
 
+const quietEngine = new SimulationEngine(cfg);
+for (let i = 0; i < Math.floor(60 / SIM_DT); i++) quietEngine.step();
+const noUnsolicitedTasks = quietEngine.tasks.tasks.length === 0;
+console.log(`idle 60 s    ${quietEngine.tasks.tasks.length} tasks created without operator input`);
+
 const baseline = run('BASELINE · 120 s', 120);
 run('SCENARIO F · BLOCKED AISLE', 90, 'F');
 run('SCENARIO B · ROBOT FAILURE', 90, 'B');
@@ -94,6 +100,9 @@ fails += check('each agent has own memory map', new Set(a.map((x) => x.state.mem
 fails += check('each agent has own planner state', new Set(a.map((x) => x.state.planHistory)).size === a.length);
 fails += check('contexts are per-agent objects', new Set(a.map((x) => x.context)).size === a.length);
 fails += check('traits differ between agents', new Set(a.map((x) => JSON.stringify(x.state.memory.traits))).size > 1);
+fails += check('no unsolicited task creation', noUnsolicitedTasks);
+const manualCheck = new SimulationEngine(cfg).forceOrder();
+fails += check('manual order source and top priority', manualCheck?.source === 'MANUAL' && manualCheck.priority === 'CRITICAL');
 
 const moving = a.filter((x) => x.state.status === 'MOVING').length;
 fails += check('robots are actually working', e.tasks.completed.length > 0, `${e.tasks.completed.length} tasks completed`);

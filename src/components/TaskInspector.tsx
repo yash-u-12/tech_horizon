@@ -42,11 +42,14 @@ export function TaskInspector() {
             <Chip tone={t.priority === 'CRITICAL' ? 'danger' : t.priority === 'HIGH' ? 'warn' : 'default'}>
               {t.priority}
             </Chip>
+            {t.source === 'MANUAL' && <Chip tone="danger">MANUAL PRIORITY</Chip>}
           </div>
           <div className="mt-1 text-3xs uppercase tracking-[0.1em] text-txt3">
-            {t.state === 'QUEUED'
-              ? 'AUCTION OPEN · DECENTRALIZED ALLOCATION'
-              : `ALLOCATED TO ${t.assignedTo ?? '—'}`}
+            {t.assignedTo
+              ? `ALLOCATED TO ${t.assignedTo}`
+              : t.state === 'ANNOUNCED' ? 'EVALUATING ELIGIBLE ROBOTS'
+                : t.state === 'QUEUED' ? 'WAITING FOR A SUITABLE ROBOT'
+                  : t.state}
           </div>
         </div>
         <button className="btn-icon" onClick={() => selectTask(null)}>
@@ -115,15 +118,46 @@ export function TaskInspector() {
 
         <div className="mt-2">
           <KV k="CREATED" v={`${t.createdAt.toFixed(1)}s`} />
+          <KV k="SOURCE" v={t.source === 'MANUAL' ? 'MANUAL ORDER' : t.source} />
           <KV k="ANNOUNCED" v={`${(t.announcedAt ?? t.createdAt).toFixed(1)}s`} />
           <KV k="ASSIGNED" v={t.assignedTo ? `${t.assignedTo} @ ${(t.assignedAt ?? 0).toFixed(1)}s` : '—'} tone={t.assignedTo ? 'nav' : 'default'} />
+          <KV k="STARTED" v={t.startedAt !== undefined ? `${t.startedAt.toFixed(1)}s` : '—'} />
           <KV k="COMPLETED" v={t.completedAt ? `${t.completedAt.toFixed(1)}s` : '—'} tone={t.completedAt ? 'ok' : 'default'} />
           <KV k="REQUIRES LIDAR" v={t.requiresLidar ? 'YES' : 'NO'} />
           <KV k="REASSIGNMENTS" v={`${t.reassignCount}`} tone={t.reassignCount ? 'analysis' : 'default'} />
         </div>
 
+        {!t.assignedTo && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(t.state) && (
+          <div className="mt-2 rounded border border-warn/30 bg-warn/[0.06] p-2 text-[11px] text-warn">
+            {t.allocationReason ?? 'Awaiting allocation evaluation.'}
+          </div>
+        )}
+
+        <Divider label="ALLOCATION TRACE" />
+        {t.trace.length ? (
+          <div className="space-y-1">
+            {t.trace.slice(-60).map((event, index) => (
+              <div key={`${event.at}-${event.event}-${event.robotId ?? ''}-${index}`} className="rounded border border-line/50 bg-abyss/40 px-2 py-1.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="mono text-3xs text-txt3">{event.at.toFixed(1)}s</span>
+                  <span className="text-3xs font-semibold uppercase tracking-wider text-nav">{event.event.replace(/_/g, ' ')}</span>
+                  {event.robotId && <span className="mono ml-auto text-3xs text-txt2">{event.robotId}</span>}
+                </div>
+                <div className="mt-0.5 text-3xs leading-snug text-txt2">{event.detail}</div>
+                {(event.cost !== undefined || event.distance !== undefined || event.eta !== undefined) && (
+                  <div className="mt-0.5 mono text-[9px] text-txt3">
+                    {event.distance !== undefined && `ROUTE ${event.distance.toFixed(1)}m · `}
+                    {event.eta !== undefined && `ETA ${event.eta.toFixed(1)}s · `}
+                    {event.cost !== undefined && `COST ${event.cost.toFixed(2)}`}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : <div className="text-3xs text-txt3">No allocation events recorded.</div>}
+
         {/* ── allocation bids ─────────────────────────────────────────────── */}
-        <Divider label="ALLOCATION DECISION" />
+        <Divider label="ALLOCATION INSIGHTS · CANDIDATE DECISIONS" />
         {bids.length === 0 ? (
           <div className="rounded border border-dashed border-line2 p-3 text-center text-[11px] text-txt3">
             NO BIDS RECEIVED YET
@@ -131,13 +165,13 @@ export function TaskInspector() {
         ) : (
           <>
             <div className="mb-1.5 text-3xs leading-tight text-txt3">
-              Each agent evaluated this task against its own context and bid independently. Lowest
-              effective cost wins — there is no central allocator.
+              Candidate evaluations are recorded by the task board. Only accepted bids with a feasible route can be selected.
             </div>
             {[...bids]
-              .sort((a, b) => a.cost - b.cost)
+              .sort((a, b) => Number(b.accepted) - Number(a.accepted) || a.cost - b.cost)
               .map((b) => {
                 const won = b.robotId === t.assignedTo;
+                const robot = snap.robots.find((r) => r.id === b.robotId);
                 return (
                   <div
                     key={b.robotId}
@@ -159,16 +193,21 @@ export function TaskInspector() {
                           WON
                         </Chip>
                       )}
-                      <span className="mono ml-auto text-[13px] font-medium text-txt">{b.cost.toFixed(2)}</span>
+                      <span className="mono ml-auto text-3xs text-txt3">{robot?.status ?? 'UNKNOWN'}</span>
+                      <span className="mono text-[13px] font-medium text-txt">{Number.isFinite(b.cost) ? b.cost.toFixed(2) : '—'}</span>
                     </div>
-                    <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5">
-                      <KV k="DISTANCE" v={`${(b.breakdown.distance ?? 0).toFixed(1)}m`} />
+                    <div className={clsx('mb-1 text-3xs uppercase tracking-wider', b.accepted ? 'text-ok' : 'text-warn')}>
+                      {b.accepted ? 'VALID ROUTE · ELIGIBLE' : `REJECTED · ${b.rejectedReason ?? b.reasoning}`}
+                    </div>
+                    {b.accepted && <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5">
+                      <KV k="ROBOT POSITION" v={robot ? `${robot.pose.x.toFixed(1)}, ${robot.pose.y.toFixed(1)}` : '—'} />
+                      <KV k="ROUTE COST DISTANCE" v={`${(b.breakdown.distance ?? 0).toFixed(1)}m`} />
                       <KV k="ETA" v={`${(b.breakdown.eta ?? 0).toFixed(1)}s`} />
                       <KV k="BATTERY" v={`${(b.breakdown.battery ?? 0).toFixed(0)}%`} />
                       <KV k="CONGESTION" v={`${b.breakdown.congestion.toFixed(2)}`} />
                       <KV k="WORKLOAD" v={`${b.breakdown.workload.toFixed(2)}`} />
                       <KV k="EAGERNESS" v={`${b.breakdown.eagerness.toFixed(2)}`} />
-                    </div>
+                    </div>}
                     <div className="mt-1 border-t border-line/60 pt-1 text-3xs leading-tight text-txt3">
                       {b.reasoning}
                     </div>

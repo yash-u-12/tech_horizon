@@ -123,6 +123,7 @@ export interface NavCell {
 
 export type TaskType = 'PICK_DELIVER' | 'RETRIEVE' | 'REPLENISH' | 'CHARGE_RUN' | 'INSPECT';
 export type TaskPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'CRITICAL';
+export type TaskSource = 'MANUAL' | 'GENERATED' | 'SCENARIO';
 export type TaskState =
   | 'ANNOUNCED' // broadcast to the fleet, bids being collected
   | 'QUEUED' // no bidder accepted / waiting for capacity
@@ -163,6 +164,7 @@ export interface TaskBid {
 export interface Task {
   id: string;
   type: TaskType;
+  source: TaskSource;
   priority: TaskPriority;
   state: TaskState;
   /** source location (pick) */
@@ -180,6 +182,9 @@ export interface Task {
   startedAt?: number;
   completedAt?: number;
   bids: TaskBid[];
+  /** Actual lifecycle and allocation decisions, recorded in simulation time. */
+  trace: { at: number; event: string; robotId?: string; detail: string; cost?: number; distance?: number; eta?: number }[];
+  allocationReason?: string;
   /** phase inside the robot's execution of the task */
   phase: 'TO_PICK' | 'PICKING' | 'TO_DROP' | 'DROPPING' | 'DONE';
   reassignCount: number;

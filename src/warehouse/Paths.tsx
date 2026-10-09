@@ -75,7 +75,7 @@ function DynamicLine({ getPoints, color, width, opacity = 1, dashed = false, y =
   );
 }
 
-export function RobotPaths({ state, showTrail }: { state: RobotState; showTrail: boolean }) {
+export function RobotPaths({ state, showTrail, highlighted = false }: { state: RobotState; showTrail: boolean; highlighted?: boolean }) {
   // ── active plan: cyan, or purple when it was just revised ────────────────
   const planColor = useMemo(() => {
     const p = state.plan;
@@ -103,7 +103,7 @@ export function RobotPaths({ state, showTrail }: { state: RobotState; showTrail:
       <DynamicLine getPoints={getHistory1} color={PATH_COLORS.BLOCKED} width={1.4} opacity={0.2} dashed y={0.035} />
       <DynamicLine getPoints={getHistory0} color={PATH_COLORS.BLOCKED} width={1.8} opacity={0.42} y={0.038} />
       {/* the route being executed */}
-      <DynamicLine getPoints={getPlan} color={planColor} width={2.4} opacity={0.92} y={0.05} />
+      <DynamicLine getPoints={getPlan} color={planColor} width={highlighted ? 3.4 : 2.4} opacity={highlighted ? 1 : 0.52} y={0.05} />
     </group>
   );
 }

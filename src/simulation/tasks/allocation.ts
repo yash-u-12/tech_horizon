@@ -49,6 +49,9 @@ export function computeBid(
   cruiseSpeed: number,
 ): { bid: TaskBid | null; reason?: string } {
   if (self.status === 'OFFLINE' || self.status === 'ESTOP') return { bid: null, reason: 'OFFLINE' };
+  if (self.status === 'CHARGING' || self.status === 'BLOCKED' || self.status === 'BINDING') {
+    return { bid: null, reason: `UNAVAILABLE: ${self.status}` };
+  }
   if (self.binding.stage !== 'IDLE' && self.binding.stage !== 'ACTIVE') return { bid: null, reason: 'BINDING' };
   if (self.taskId) return { bid: null, reason: 'ALREADY COMMITTED' };
   if (ann.requiresLidar && !self.capabilities.lidar) return { bid: null, reason: 'NO LIDAR' };

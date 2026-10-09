@@ -102,8 +102,8 @@ export const SCENARIOS: Scenario[] = [
       const y = 15.75;
       const aDest = { x: 6.0, y };
       const bDest = { x: 34.0, y };
-      const t1 = ctx.tasks.createExplicit(ctx.time, { x: 6.0, y }, 'CONFLICT-A', { x: 34.0, y }, 'CONFLICT-B', 'HIGH');
-      const t2 = ctx.tasks.createExplicit(ctx.time, { x: 34.0, y }, 'CONFLICT-B', { x: 6.0, y }, 'CONFLICT-A', 'LOW');
+      const t1 = ctx.tasks.createExplicit(ctx.time, { x: 6.0, y }, 'CONFLICT-A', { x: 34.0, y }, 'CONFLICT-B', 'HIGH', 'SCENARIO');
+      const t2 = ctx.tasks.createExplicit(ctx.time, { x: 34.0, y }, 'CONFLICT-B', { x: 6.0, y }, 'CONFLICT-A', 'LOW', 'SCENARIO');
       void aDest; void bDest;
       A.assignTask(ctx.world, t1.id);
       B.assignTask(ctx.world, t2.id);
@@ -127,7 +127,7 @@ export const SCENARIOS: Scenario[] = [
       if (!holder) return;
       const taskId = holder.state.taskId!;
       holder.fail('FORCED FAULT · REASSIGNMENT DRILL');
-      ctx.tasks.reQueue(taskId, 'AGENT LOST · REASSIGNING');
+      ctx.tasks.reQueue(taskId, 'AGENT LOST · REASSIGNING', ctx.time);
       ctx.emit({ t: ctx.time, severity: 'CRITICAL', source: 'TASK', category: 'TASK', message: `${taskId} REASSIGNING · ${holder.state.id} REMOVED`, taskId, robotId: holder.state.id });
     },
   },
@@ -207,13 +207,12 @@ export const SCENARIOS: Scenario[] = [
   {
     id: 'H',
     code: 'SCENARIO H',
-    name: 'TASK SURGE',
-    description: 'Order intake triples for sixty seconds.',
-    demo: 'Watch the auction rate rise and the fleet utilisation climb.',
+    name: 'GENERATION CONTROL',
+    description: 'Confirms that tasks are generated only after an operator starts a batch.',
+    demo: 'Use Generate Tasks on the Task Page to start a five-task batch.',
     severity: 'INFO',
     apply(ctx) {
-      ctx.tasks.triggerSurge(ctx.time, 60, 3.2);
-      ctx.emit({ t: ctx.time, severity: 'WARNING', source: 'WMS', category: 'TASK', message: 'ORDER SURGE · 3.2× INTAKE FOR 60 s' });
+      ctx.emit({ t: ctx.time, severity: 'INFO', source: 'WMS', category: 'TASK', message: 'TASK GENERATION IS OPERATOR CONTROLLED · USE GENERATE TASKS ON THE TASK PAGE' });
     },
   },
 ];

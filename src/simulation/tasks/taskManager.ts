@@ -8,7 +8,7 @@
  * without asking anyone. No optimiser, no dispatcher, no central brain.
  */
 
-import type { Package, Task, TaskBid, TaskPriority, TaskType, Vec2 } from '../types';
+import type { Package, Task, TaskBid, TaskPriority, TaskSource, TaskType, Vec2 } from '../types';
 import type { Warehouse } from '../environment/warehouse';
 import { dist } from '../core/math';
 import { mulberry32, type Rng } from '../core/rng';
@@ -48,9 +48,6 @@ export interface Evaluation {
 
 export interface TaskManagerConfig {
   seed: number;
-  /** average seconds between generated orders */
-  orderInterval: number;
-  maxActiveTasks: number;
 }
 
 export class TaskManager {
@@ -59,11 +56,7 @@ export class TaskManager {
   evaluations: Evaluation[] = [];
   private counter = 0;
   private rnd: Rng;
-  private nextOrderAt: number;
   cfg: TaskManagerConfig;
-  /** scenario hooks */
-  surgeUntil = 0;
-  surgeMultiplier = 1;
 
   private completedTimes: number[] = [];
   private createdTimes: number[] = [];
@@ -71,33 +64,31 @@ export class TaskManager {
   constructor(cfg: TaskManagerConfig) {
     this.cfg = cfg;
     this.rnd = mulberry32(cfg.seed ^ 0x9e3779b9);
-    this.nextOrderAt = 2.5;
+  }
+
+  /** Create exactly one generated order through the same authoritative ledger. */
+  createGenerated(now: number, warehouse: Warehouse): Task | null {
+    const task = this.generateTask(now, warehouse);
+    if (!task) return null;
+    this.tasks.push(task);
+    this.createdTimes.push(now);
+    return task;
+  }
+
+  prioritizeOpenTasks(now: number, manualTaskId: string) {
+    for (const task of this.tasks) {
+      if (task.id === manualTaskId || (task.state !== 'ANNOUNCED' && task.state !== 'QUEUED')) continue;
+      task.state = 'ANNOUNCED';
+      task.announcedAt = now;
+      task.bids = [];
+      task.allocationReason = 'Reconsidered alongside a new Critical manual order.';
+      task.trace.push({ at: now, event: 'RECONSIDERED', detail: task.allocationReason });
+      this.evaluations = this.evaluations.filter((e) => e.taskId !== task.id);
+      this.pendingAnnouncements.push(task);
+    }
   }
 
   // ── order generation (the "WMS" — a dumb order source) ────────────────────
-
-  tickOrders(now: number, warehouse: Warehouse, activeCount: number): Task[] {
-    const created: Task[] = [];
-    if (now < this.nextOrderAt) return created;
-    const surge = now < this.surgeUntil;
-    const interval = (this.cfg.orderInterval / (surge ? this.surgeMultiplier : 1)) * (0.7 + this.rnd() * 0.6);
-    this.nextOrderAt = now + interval;
-    if (activeCount >= this.cfg.maxActiveTasks) return created;
-
-    const t = this.generateTask(now, warehouse);
-    if (t) {
-      this.tasks.push(t);
-      this.createdTimes.push(now);
-      created.push(t);
-    }
-    return created;
-  }
-
-  triggerSurge(now: number, seconds: number, multiplier: number) {
-    this.surgeUntil = now + seconds;
-    this.surgeMultiplier = multiplier;
-    this.nextOrderAt = Math.min(this.nextOrderAt, now + 0.4);
-  }
 
   private generateTask(now: number, warehouse: Warehouse): Task | null {
     const pkg = warehouse.pickRandomAvailablePackage(this.rnd);
@@ -116,7 +107,7 @@ export class TaskManager {
     const station = stationPool[Math.floor(this.rnd() * stationPool.length)];
 
     const pRoll = this.rnd();
-    const priority: TaskPriority = pRoll < 0.06 ? 'CRITICAL' : pRoll < 0.3 ? 'HIGH' : pRoll < 0.82 ? 'NORMAL' : 'LOW';
+    const priority: TaskPriority = pRoll < 0.25 ? 'HIGH' : pRoll < 0.82 ? 'NORMAL' : 'LOW';
 
     this.counter++;
     const id = `TASK-${this.counter.toString().padStart(3, '0')}`;
@@ -126,8 +117,10 @@ export class TaskManager {
     const task: Task = {
       id,
       type,
+      source: 'GENERATED',
       priority,
       state: 'ANNOUNCED',
+      allocationReason: 'Awaiting allocation evaluation.',
       from: { x: face.x, y: face.y, label: `${pkg.rackId} · ${pkg.id}`, rackId: pkg.rackId },
       to: { x: station.x, y: station.y, label: station.name },
       packageId: pkg.id,
@@ -136,24 +129,28 @@ export class TaskManager {
       createdAt: now,
       announcedAt: now,
       bids: [],
+      trace: [{ at: now, event: 'CREATED', detail: 'Generated task added to the allocation queue.' }],
       phase: 'TO_PICK',
       reassignCount: 0,
       requiresLidar: this.rnd() < 0.8,
       weightKg: pkg.weightKg,
-      slaSeconds: 45 + (priority === 'CRITICAL' ? 15 : priority === 'HIGH' ? 30 : 60),
+      slaSeconds: 45 + (priority === 'HIGH' ? 30 : 60),
     };
+    task.trace.push({ at: now, event: 'ANNOUNCED', detail: 'Task entered the shared allocation queue.' });
     return task;
   }
 
   /** Deterministic on-demand task (used by the demo controls). */
-  createExplicit(now: number, from: Vec2, fromLabel: string, to: Vec2, toLabel: string, priority: TaskPriority): Task {
+  createExplicit(now: number, from: Vec2, fromLabel: string, to: Vec2, toLabel: string, priority: TaskPriority, source: TaskSource = 'MANUAL'): Task {
     this.counter++;
     const id = `TASK-${this.counter.toString().padStart(3, '0')}`;
     const task: Task = {
       id,
       type: 'PICK_DELIVER',
+      source,
       priority,
       state: 'ANNOUNCED',
+      allocationReason: 'Awaiting allocation evaluation.',
       from: { x: from.x, y: from.y, label: fromLabel },
       to: { x: to.x, y: to.y, label: toLabel },
       assignedTo: null,
@@ -161,12 +158,18 @@ export class TaskManager {
       createdAt: now,
       announcedAt: now,
       bids: [],
+      trace: [{
+        at: now,
+        event: 'CREATED',
+        detail: `${source === 'MANUAL' ? 'Manual Order' : source === 'SCENARIO' ? 'Scenario' : 'Generated'} created at ${now.toFixed(1)}s with ${priority} priority.`,
+      }],
       phase: 'TO_PICK',
       reassignCount: 0,
       requiresLidar: true,
       weightKg: 2.5,
       slaSeconds: 60,
     };
+    task.trace.push({ at: now, event: 'ANNOUNCED', detail: 'Task entered the shared allocation queue.' });
     this.tasks.push(task);
     return task;
   }
@@ -175,6 +178,17 @@ export class TaskManager {
 
   submitEvaluation(ev: Evaluation) {
     this.evaluations.push(ev);
+    const task = this.byId(ev.taskId);
+    if (!task) return;
+    task.trace.push({
+      at: ev.at,
+      event: ev.bid?.accepted ? 'CANDIDATE_ACCEPTED' : 'CANDIDATE_REJECTED',
+      robotId: ev.robotId,
+      detail: ev.bid?.reasoning ?? ev.reason ?? 'No eligible bid.',
+      cost: ev.bid?.cost,
+      distance: ev.bid?.distance,
+      eta: ev.bid?.eta,
+    });
   }
 
   /** Tasks the board wants (re)announced on the comms bus; engine drains it. */
@@ -193,17 +207,23 @@ export class TaskManager {
    */
   resolveAnnouncements(now: number): { task: Task; winner: string; bids: TaskBid[] }[] {
     const out: { task: Task; winner: string; bids: TaskBid[] }[] = [];
+    const due = this.tasks.filter((task) => task.state === 'ANNOUNCED' && now - task.announcedAt >= BID_WINDOW)
+      .sort((a, b) => {
+        const rank: Record<TaskPriority, number> = { CRITICAL: 4, HIGH: 3, NORMAL: 2, LOW: 1 };
+        return rank[b.priority] - rank[a.priority] || a.createdAt - b.createdAt || a.id.localeCompare(b.id);
+      });
     for (const task of this.tasks) {
-      if (task.state === 'QUEUED') {
-        if (now - task.announcedAt >= BID_WINDOW + 1.4) {
-          task.state = 'ANNOUNCED';
-          task.announcedAt = now;
-          this.pendingAnnouncements.push(task);
-        }
-        continue;
-      }
-      if (task.state !== 'ANNOUNCED') continue;
-      if (now - task.announcedAt < BID_WINDOW) continue;
+      if (task.state !== 'QUEUED' || now - task.announcedAt < BID_WINDOW + 1.4) continue;
+      task.state = 'ANNOUNCED';
+      task.announcedAt = now;
+      task.bids = [];
+      task.allocationReason = 'Awaiting fresh allocation evaluations.';
+      task.trace.push({ at: now, event: 'REANNOUNCED', detail: 'Queued task reopened for a fresh allocation round.' });
+      this.evaluations = this.evaluations.filter((e) => e.taskId !== task.id);
+      this.pendingAnnouncements.push(task);
+    }
+    const claimedRobots = new Set<string>();
+    for (const task of due) {
 
       const evs = this.evaluations.filter((e) => e.taskId === task.id);
       task.bids = evs.map((e) => e.bid ?? {
@@ -230,25 +250,44 @@ export class TaskManager {
         reasoning: e.reason ?? 'INELIGIBLE',
       });
 
-      const candidates = task.bids.filter((b) => b.accepted && Number.isFinite(b.cost));
+      const candidates = task.bids.filter((b) => b.accepted && Number.isFinite(b.cost) && !claimedRobots.has(b.robotId));
       const winner = selectWinner(candidates);
       if (winner) {
+        // Reserve within this synchronous award batch. Agents evaluated all
+        // simultaneously open auctions while idle, so a robot may appear as
+        // the best bidder on several tasks in the same tick.
+        claimedRobots.add(winner.robotId);
         task.state = 'ASSIGNED';
         task.assignedTo = winner.robotId;
         task.assignedAt = now;
+        task.allocationReason = undefined;
+        task.trace.push({
+          at: now,
+          event: 'ASSIGNED',
+          robotId: winner.robotId,
+          detail: `${winner.robotId} selected from eligible candidates at cost ${winner.cost.toFixed(2)}.`,
+          cost: winner.cost,
+          distance: winner.distance,
+          eta: winner.eta,
+        });
         out.push({ task, winner: winner.robotId, bids: task.bids });
       } else {
         // nobody was eligible at that moment — hold the job and re-open the
         // auction shortly. It keeps its original createdAt for SLA accounting.
         task.state = 'QUEUED';
         task.announcedAt = now;
+        const reasons = [...new Set(evs.map((e) => e.reason ?? (e.bid?.accepted ? 'No assignment slot remained in this award cycle.' : 'No eligible bid.')))];
+        task.allocationReason = reasons.length
+          ? reasons.join('; ')
+          : 'Awaiting allocation evaluations.';
+        task.trace.push({ at: now, event: 'WAITING', detail: task.allocationReason });
       }
       this.evaluations = this.evaluations.filter((e) => e.taskId !== task.id);
     }
     return out;
   }
 
-  reQueue(taskId: string, reason: string) {
+  reQueue(taskId: string, reason: string, now?: number) {
     const t = this.tasks.find((x) => x.id === taskId);
     if (!t) return;
     if (t.assignedTo) t.previousAssignees.push(t.assignedTo);
@@ -256,6 +295,8 @@ export class TaskManager {
     t.state = 'REASSIGNING';
     t.reassignCount++;
     t.failureReason = reason;
+    t.allocationReason = reason;
+    t.trace.push({ at: now ?? t.assignedAt ?? t.createdAt, event: 'REQUEUED', detail: reason });
     t.bids = [];
     t.phase = 'TO_PICK';
     // open a new announcement window
@@ -278,6 +319,8 @@ export class TaskManager {
           t.state = 'ANNOUNCED';
           t.announcedAt = now;
           t.failureReason = undefined;
+          t.allocationReason = 'Awaiting reassignment evaluation.';
+          t.trace.push({ at: now, event: 'REANNOUNCED', detail: 'Task returned to allocation after assignment recovery.' });
           this.pendingAnnouncements.push(t);
         }
         this.reassignAt.splice(i, 1);
@@ -291,6 +334,7 @@ export class TaskManager {
     t.state = 'IN_PROGRESS';
     t.startedAt = now;
     t.phase = 'TO_PICK';
+    t.trace.push({ at: now, event: 'EXECUTION_STARTED', robotId: t.assignedTo ?? undefined, detail: 'Robot began navigating to pickup.' });
   }
 
   complete(taskId: string, now: number, warehouse: Warehouse) {
@@ -299,6 +343,8 @@ export class TaskManager {
     t.state = 'COMPLETED';
     t.completedAt = now;
     t.phase = 'DONE';
+    t.allocationReason = undefined;
+    t.trace.push({ at: now, event: 'COMPLETED', robotId: t.assignedTo ?? undefined, detail: 'Delivery completed successfully.' });
     const dur = now - t.createdAt;
     this.completedTimes.push(dur);
     const pkg = t.packageId ? warehouse.packageById(t.packageId) : undefined;
@@ -309,6 +355,7 @@ export class TaskManager {
       pkg.carrierId = undefined;
       pkg.taskId = undefined;
     }
+    this.reannounceQueued(now);
   }
 
   fail(taskId: string, reason: string) {
@@ -316,6 +363,7 @@ export class TaskManager {
     if (!t) return;
     t.state = 'FAILED';
     t.failureReason = reason;
+    t.trace.push({ at: t.startedAt ?? t.createdAt, event: 'FAILED', robotId: t.assignedTo ?? undefined, detail: reason });
   }
 
   releasePackage(taskId: string, warehouse: Warehouse) {
@@ -330,7 +378,21 @@ export class TaskManager {
   }
 
   get active() {
-    return this.tasks.filter((t) => t.state === 'ASSIGNED' || t.state === 'IN_PROGRESS' || t.state === 'ANNOUNCED' || t.state === 'REASSIGNING');
+    return this.tasks.filter((t) => t.state === 'ASSIGNED' || t.state === 'IN_PROGRESS' || t.state === 'ANNOUNCED' || t.state === 'QUEUED' || t.state === 'REASSIGNING');
+  }
+
+  /** Reopen queued work as soon as a robot finishes, without waiting for a timer. */
+  private reannounceQueued(now: number) {
+    for (const task of this.tasks) {
+      if (task.state !== 'QUEUED') continue;
+      task.state = 'ANNOUNCED';
+      task.announcedAt = now;
+      task.bids = [];
+      task.allocationReason = 'Robot became available; task returned to allocation.';
+      this.evaluations = this.evaluations.filter((e) => e.taskId !== task.id);
+      task.trace.push({ at: now, event: 'RECONSIDERED', detail: task.allocationReason });
+      this.pendingAnnouncements.push(task);
+    }
   }
 
   get completed() {
