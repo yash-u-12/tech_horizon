@@ -19,5 +19,12 @@
     "paths": { "@/*": ["./src/*"] },
     "types": ["node"]
   },
-  "include": ["src", "scripts", "vite.config.ts"]
+  "include": [
+    "src/main.tsx",
+    "scripts/sim-test.ts",
+    "scripts/sim-task.ts",
+    "scripts/sim-debug.ts",
+    "vite.config.ts"
+  ],
+  "exclude": ["src/frontend", "scripts/verify.ts"]
 }
