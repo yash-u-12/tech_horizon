@@ -21,11 +21,11 @@ import { tx, tz } from './shared';
 import { WORLD_H, WORLD_W } from '@/simulation/environment/warehouse';
 
 function GroundPicker() {
-  const { clickMode, placeFrom, setPlaceFrom, pendingOrder, setPendingOrder } = useNexus();
+  const { clickMode, placeFrom, setPlaceFrom } = useNexus();
   const { raycaster, camera, gl } = useThree();
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
 
-  if (clickMode === 'SELECT' && !placeFrom && !pendingOrder) return null;
+  if (clickMode === 'SELECT' && !placeFrom) return null;
 
   const toWorld = (e: any) => {
     const rect = gl.domElement.getBoundingClientRect();
@@ -66,14 +66,14 @@ function GroundPicker() {
               setPlaceFrom(location);
               useNexus.getState().notify('PICK LOCATION SET · NOW SELECT A DESTINATION', 'INFO');
             } else {
-              const error = eng.validateManualOrder(placeFrom, location);
-              if (error) {
-                useNexus.getState().notify(error, 'WARNING');
+              const result = eng.createManualOrder(placeFrom, location);
+              if (!result.task) {
+                useNexus.getState().notify(result.error ?? 'The order could not be created.', 'WARNING');
                 return;
               }
-              setPendingOrder({ pickup: placeFrom, destination: location });
-              useNexus.getState().notify('ROUTE VALID · REVIEW AND CONFIRM THE CRITICAL ORDER', 'INFO');
+              runtime.emit();
               useNexus.getState().setClickMode('SELECT');
+              useNexus.getState().notify(`${result.task.id} CONFIRMED · CRITICAL PRIORITY · ALLOCATION STARTED`, 'SUCCESS');
             }
           }
         }}
@@ -103,23 +103,6 @@ function GroundPicker() {
             </div>
           </Html>
         </group>
-      )}
-      {pendingOrder && (
-        <>
-          <group position={[tx(pendingOrder.pickup.x), 0.08, tz(pendingOrder.pickup.y)]}>
-            <mesh rotation={[-Math.PI / 2, 0, 0]}>
-              <ringGeometry args={[0.36, 0.48, 24]} />
-              <meshBasicMaterial color="#34D399" transparent opacity={0.9} side={THREE.DoubleSide} depthWrite={false} />
-            </mesh>
-          </group>
-          <group position={[tx(pendingOrder.destination.x), 0.08, tz(pendingOrder.destination.y)]}>
-            <mesh rotation={[-Math.PI / 2, 0, 0]}>
-              <ringGeometry args={[0.36, 0.48, 24]} />
-              <meshBasicMaterial color="#38BDF8" transparent opacity={0.9} side={THREE.DoubleSide} depthWrite={false} />
-            </mesh>
-          </group>
-          <Line2D a={pendingOrder.pickup} b={pendingOrder.destination} />
-        </>
       )}
     </>
   );

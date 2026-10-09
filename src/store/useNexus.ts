@@ -10,7 +10,7 @@ import { create } from 'zustand';
 import { runtime, DEFAULT_CONFIG } from '@/simulation/runtime';
 import type { Snapshot } from '@/simulation/engine';
 
-export type PageId = 'COMMAND' | 'FLEET' | 'TASKS' | 'TRAFFIC' | 'TWIN' | 'EXPERIMENTS' | 'SYSTEM';
+export type PageId = 'COMMAND' | 'FLEET' | 'TASKS' | 'COMMS' | 'TWIN' | 'EXPERIMENTS' | 'SYSTEM';
 
 export interface LayerState {
   paths: boolean;
@@ -25,10 +25,6 @@ export interface LayerState {
 }
 
 export type CameraMode = 'ORBIT' | 'TOP' | 'ISO' | 'FOLLOW';
-export interface ManualOrderDraft {
-  pickup: { x: number; y: number };
-  destination: { x: number; y: number };
-}
 
 interface NexusState {
   snap: Snapshot;
@@ -43,7 +39,6 @@ interface NexusState {
   layers: LayerState;
   bindingFor: string | null;
   inspector: 'ROBOT' | 'TASK' | null;
-  eventsFilter: string;
   taskFilter: string;
   fleetFilter: string;
   fleetQuery: string;
@@ -52,7 +47,6 @@ interface NexusState {
   runningExperiment: string | null;
   clickMode: 'SELECT' | 'PLACE_OBSTACLE' | 'PLACE_TASK';
   placeFrom: { x: number; y: number } | null;
-  pendingOrder: ManualOrderDraft | null;
 
   setPage: (p: PageId) => void;
   selectRobot: (id: string | null) => void;
@@ -67,7 +61,6 @@ interface NexusState {
   openBinding: (robotId: string | null) => void;
   closeBinding: () => void;
   setInspector: (i: 'ROBOT' | 'TASK' | null) => void;
-  setEventsFilter: (s: string) => void;
   setTaskFilter: (s: string) => void;
   setFleetFilter: (s: string) => void;
   setFleetQuery: (s: string) => void;
@@ -78,7 +71,6 @@ interface NexusState {
   setRunningExperiment: (id: string | null) => void;
   setClickMode: (m: 'SELECT' | 'PLACE_OBSTACLE' | 'PLACE_TASK') => void;
   setPlaceFrom: (p: { x: number; y: number } | null) => void;
-  setPendingOrder: (draft: ManualOrderDraft | null) => void;
   rebuild: (robotCount?: number) => void;
 }
 
@@ -107,7 +99,6 @@ export const useNexus = create<NexusState>((set, get) => ({
   },
   bindingFor: null,
   inspector: null,
-  eventsFilter: 'ALL',
   taskFilter: 'ALL',
   fleetFilter: 'ALL',
   fleetQuery: '',
@@ -116,7 +107,6 @@ export const useNexus = create<NexusState>((set, get) => ({
   runningExperiment: null,
   clickMode: 'SELECT',
   placeFrom: null,
-  pendingOrder: null,
 
   setPage: (page) => set({ page }),
   selectRobot: (id) => set({ selectedRobot: id, inspector: id ? 'ROBOT' : null }),
@@ -135,7 +125,6 @@ export const useNexus = create<NexusState>((set, get) => ({
   openBinding: (bindingFor) => set({ bindingFor }),
   closeBinding: () => set({ bindingFor: null }),
   setInspector: (inspector) => set({ inspector }),
-  setEventsFilter: (eventsFilter) => set({ eventsFilter }),
   setTaskFilter: (taskFilter) => set({ taskFilter }),
   setFleetFilter: (fleetFilter) => set({ fleetFilter }),
   setFleetQuery: (fleetQuery) => set({ fleetQuery }),
@@ -152,10 +141,9 @@ export const useNexus = create<NexusState>((set, get) => ({
   setRunningExperiment: (runningExperiment) => set({ runningExperiment }),
   setClickMode: (clickMode) => set({ clickMode, placeFrom: null }),
   setPlaceFrom: (placeFrom) => set({ placeFrom }),
-  setPendingOrder: (pendingOrder) => set({ pendingOrder }),
   rebuild: (robotCount) => {
     runtime.rebuild({ robotCount: robotCount ?? DEFAULT_CONFIG.robotCount });
-    set({ snap: runtime.snapshot, selectedRobot: null, selectedTask: null, inspector: null, followId: null, pendingOrder: null });
+    set({ snap: runtime.snapshot, selectedRobot: null, selectedTask: null, inspector: null, followId: null });
   },
 }));
 

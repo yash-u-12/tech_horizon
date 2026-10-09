@@ -4,10 +4,10 @@ import {
   Cpu,
   FlaskConical,
   ListChecks,
+  Network,
   Radar,
   Radio,
   Server,
-  TrafficCone,
 } from 'lucide-react';
 import { useNexus, type PageId } from '@/store/useNexus';
 import { Dot } from './ui';
@@ -16,7 +16,7 @@ const NAV: { id: PageId; label: string; sub: string; icon: typeof Radar }[] = [
   { id: 'COMMAND', label: 'COMMAND CENTER', sub: 'LIVE OPERATIONS', icon: Radar },
   { id: 'FLEET', label: 'FLEET', sub: 'AGENT REGISTRY', icon: Cpu },
   { id: 'TASKS', label: 'TASKS', sub: 'ALLOCATION LEDGER', icon: ListChecks },
-  { id: 'TRAFFIC', label: 'TRAFFIC', sub: 'CONFLICT + FLOW', icon: TrafficCone },
+  { id: 'COMMS', label: 'COMMUNICATION', sub: 'MESSAGE MESH', icon: Network },
   { id: 'TWIN', label: 'DIGITAL TWIN', sub: 'PHYSICAL BRIDGE', icon: Radio },
   { id: 'EXPERIMENTS', label: 'EXPERIMENTS', sub: 'CONTROLLED TRIALS', icon: FlaskConical },
   { id: 'SYSTEM', label: 'SYSTEM', sub: 'NODE HEALTH', icon: Server },

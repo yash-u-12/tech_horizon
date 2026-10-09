@@ -7,13 +7,13 @@
 export { CommandCenter as CommandPage } from '../../pages/CommandCenter';
 export { Fleet } from '../../pages/Fleet';
 export { Tasks } from '../../pages/Tasks';
-export { Traffic } from '../../pages/Traffic';
+export { Communication } from '../../pages/Communication';
 export { DigitalTwin } from '../../pages/DigitalTwin';
 export { Experiments } from '../../pages/Experiments';
 export { SystemPage } from '../../pages/System';
 
 export { Fleet as FleetPage } from '../../pages/Fleet';
 export { Tasks as TasksPage } from '../../pages/Tasks';
-export { Traffic as TrafficPage } from '../../pages/Traffic';
+export { Communication as CommsPage } from '../../pages/Communication';
 export { DigitalTwin as TwinPage } from '../../pages/DigitalTwin';
 export { Experiments as ExperimentsPage } from '../../pages/Experiments';

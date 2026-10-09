@@ -2,12 +2,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, Info, OctagonAlert, X } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
 import { TopBar } from '@/components/TopBar';
-import { ScenarioBar } from '@/components/ScenarioBar';
 import { useNexus } from '@/store/useNexus';
 import { CommandCenter } from '@/pages/CommandCenter';
 import { Fleet } from '@/pages/Fleet';
 import { Tasks } from '@/pages/Tasks';
-import { Traffic } from '@/pages/Traffic';
+import { Communication } from '@/pages/Communication';
 import { DigitalTwin } from '@/pages/DigitalTwin';
 import { Experiments } from '@/pages/Experiments';
 import { SystemPage } from '@/pages/System';
@@ -18,7 +17,7 @@ const PAGES = {
   COMMAND: CommandCenter,
   FLEET: Fleet,
   TASKS: Tasks,
-  TRAFFIC: Traffic,
+  COMMS: Communication,
   TWIN: DigitalTwin,
   EXPERIMENTS: Experiments,
   SYSTEM: SystemPage,
@@ -59,7 +58,6 @@ export default function App() {
         <div className="relative flex min-h-0 flex-1 flex-col">
           <Page key={page} />
         </div>
-        <ScenarioBar />
       </div>
 
       {/* ── toast ──────────────────────────────────────────────────────────── */}
@@ -102,7 +100,7 @@ export default function App() {
       </AnimatePresence>
 
       {clickMode !== 'SELECT' && (
-        <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-40 flex justify-center pb-[52px]">
+        <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-40 flex justify-center pb-6">
           <div className="rounded border border-nav/40 bg-void/95 px-3 py-1 text-2xs font-semibold uppercase tracking-[0.12em] text-nav shadow-2xl">
             {clickMode === 'PLACE_OBSTACLE'
               ? 'CLICK THE FLOOR TO PLACE AN OBSTACLE · ROBOTS MUST PERCEIVE AND REPLAN AROUND IT'

@@ -16,7 +16,7 @@
 
 import { Warehouse, WORLD_W, WORLD_H } from './environment/warehouse';
 import type { OccupancyGrid } from './environment/grid';
-import { CommsBus } from './communication/bus';
+import { CommsBus, type CommsRecord } from './communication/bus';
 import { TaskManager, STATIONS, BID_WINDOW } from './tasks/taskManager';
 import { RobotAgent, type AgentWorld, type TaskAccess } from './agents/agent';
 import { HardwareRegistry, DEFAULT_AGENT_CAPS, LITE_AGENT_CAPS } from './robots/hardware';
@@ -83,6 +83,9 @@ export interface Snapshot {
   commsLoss: number;
   commsLatency: number;
   metrics: ExperimentMetrics;
+  /** bounded log of real transmissions over the comms bus */
+  comms: CommsRecord[];
+  commsStats: { sent: number; delivered: number; dropped: number };
 }
 
 export class SimulationEngine {
@@ -1000,6 +1003,8 @@ export class SimulationEngine {
       commsLoss: this.comms.loss,
       commsLatency: this.comms.latency,
       metrics,
+      comms: this.bus.records.slice(-120),
+      commsStats: { ...this.bus.stats },
     };
   }
 
