@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    background: #07090c;
+    color: #dce4ed;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    font-family: Inter, Manrope, 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-feature-settings: 'cv05' 1, 'ss01' 1;
+    overflow: hidden;
+  }
+  ::selection {
+    background: rgba(56, 189, 248, 0.28);
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1d2937;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #2b3a4a;
+  }
+  input,
+  button,
+  select {
+    font-family: inherit;
+  }
+}
+
+@layer components {
+  /* ── structural ─────────────────────────────────────────────────────────── */
+  .panel {
+    @apply bg-panel/80 border border-line rounded-md backdrop-blur-[2px];
+  }
+  .panel-solid {
+    @apply bg-panel border border-line rounded-md;
+  }
+  .raised {
+    @apply bg-raised/60 border border-line2 rounded;
+  }
+
+  /* ── typography ─────────────────────────────────────────────────────────── */
+  .label {
+    @apply text-3xs font-semibold uppercase tracking-[0.14em] text-txt3;
+  }
+  .label-sm {
+    @apply text-2xs font-semibold uppercase tracking-[0.12em] text-txt3;
+  }
+  .mono {
+    font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .value {
+    @apply mono text-[12px] text-txt;
+  }
+  .value-lg {
+    @apply mono text-[17px] leading-none text-txt;
+  }
+
+  /* ── controls ───────────────────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded border border-line2 bg-raised/70 px-2.5 py-1.5
+           text-2xs font-semibold uppercase tracking-[0.1em] text-txt2 transition-colors
+           hover:border-steel/60 hover:bg-raised hover:text-txt
+           disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-raised/70;
+  }
+  .btn-primary {
+    @apply border-nav/40 bg-nav/[0.12] text-nav hover:border-nav/70 hover:bg-nav/20 hover:text-nav;
+  }
+  .btn-danger {
+    @apply border-danger/40 bg-danger/10 text-danger hover:border-danger/70 hover:bg-danger/20;
+  }
+  .btn-ok {
+    @apply border-ok/40 bg-ok/10 text-ok hover:border-ok/70 hover:bg-ok/20;
+  }
+  .btn-icon {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded border border-line2 bg-raised/70
+           text-txt2 transition-colors hover:border-steel/60 hover:text-txt;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5
+           text-3xs font-semibold uppercase tracking-[0.1em];
+  }
+  .input {
+    @apply w-full rounded border border-line2 bg-abyss px-2 py-1.5 text-xs text-txt
+           placeholder:text-txt3 focus:border-nav/50 focus:outline-none;
+  }
+
+  /* ── table ──────────────────────────────────────────────────────────────── */
+  .row {
+    @apply grid items-center gap-2 border-b border-line/60 px-3 py-2 transition-colors;
+  }
+  .row:hover {
+    @apply bg-panel2/60;
+  }
+  .row-sel {
+    @apply bg-nav/[0.08] border-l-2 border-l-nav;
+  }
+  .th {
+    @apply sticky top-0 z-10 border-b border-line bg-panel/95 backdrop-blur px-3 py-2
+           text-3xs font-semibold uppercase tracking-[0.14em] text-txt3;
+  }
+
+  /* ── misc ───────────────────────────────────────────────────────────────── */
+  .hairline {
+    @apply border-t border-line;
+  }
+  .scan-line {
+    background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.06), transparent);
+  }
+}
+
+/* Three.js canvas should never show a focus ring */
+canvas:focus {
+  outline: none;
+}
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
