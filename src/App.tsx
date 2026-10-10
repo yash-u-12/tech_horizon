@@ -6,7 +6,7 @@ import { useNexus } from '@/store/useNexus';
 import { CommandCenter } from '@/pages/CommandCenter';
 import { Fleet } from '@/pages/Fleet';
 import { Tasks } from '@/pages/Tasks';
-import { Communication } from '@/pages/Communication';
+import { CommunicationNoc } from '@/pages/CommunicationNoc';
 import { DigitalTwin } from '@/pages/DigitalTwin';
 import { Experiments } from '@/pages/Experiments';
 import { SystemPage } from '@/pages/System';
@@ -17,7 +17,7 @@ const PAGES = {
   COMMAND: CommandCenter,
   FLEET: Fleet,
   TASKS: Tasks,
-  COMMS: Communication,
+  COMMS: CommunicationNoc,
   TWIN: DigitalTwin,
   EXPERIMENTS: Experiments,
   SYSTEM: SystemPage,

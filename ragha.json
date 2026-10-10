@@ -1,0 +1,70 @@
+{
+  "ragha": {
+    "robotCount": 6,
+    "updatedAt": 1728288000000,
+    "robots": {
+      "R01": {
+        "virtualState": { "x": 3.0, "y": 16.0, "theta": 0.0, "timestamp": 1728288000000, "source": "SIMULATION" },
+        "health": { "batteryPercentage": 79, "internalTempC": null, "status": "IDLE", "sensorStatus": { "lidar": true, "healthy": true }, "faultCode": null, "updatedAt": 1728288000000, "source": "SIMULATION" },
+        "currentTask": { "taskId": null, "destination": null, "taskStatus": null, "phase": null, "pickup": null, "updatedAt": 1728288000000 },
+        "position": { "x": 3.0, "y": 16.0, "theta": 0.0, "timestamp": 1728288000000 },
+        "location": { "zone": "STORAGE", "timestamp": 1728288000000 },
+        "connection": { "online": true, "lastHeartbeat": 1728288000000, "lastSuccessfulUpdate": 1728288000000, "source": "SIMULATION" }
+      },
+      "R02": {
+        "virtualState": { "x": 2.75, "y": 10.25, "theta": 3.14159, "timestamp": 1728288000000, "source": "SIMULATION" },
+        "health": { "batteryPercentage": 92, "internalTempC": null, "status": "IDLE", "sensorStatus": { "lidar": true, "healthy": true }, "faultCode": null, "updatedAt": 1728288000000, "source": "SIMULATION" },
+        "currentTask": { "taskId": null, "destination": null, "taskStatus": null, "phase": null, "pickup": null, "updatedAt": 1728288000000 },
+        "position": { "x": 2.75, "y": 10.25, "theta": 3.14159, "timestamp": 1728288000000 },
+        "location": { "zone": "STORAGE", "timestamp": 1728288000000 },
+        "connection": { "online": true, "lastHeartbeat": 1728288000000, "lastSuccessfulUpdate": 1728288000000, "source": "SIMULATION" }
+      },
+      "R03": {
+        "virtualState": { "x": 2.75, "y": 24.25, "theta": 0.0, "timestamp": 1728288000000, "source": "SIMULATION" },
+        "health": { "batteryPercentage": 70, "internalTempC": null, "status": "IDLE", "sensorStatus": { "lidar": true, "healthy": true }, "faultCode": null, "updatedAt": 1728288000000, "source": "SIMULATION" },
+        "currentTask": { "taskId": null, "destination": null, "taskStatus": null, "phase": null, "pickup": null, "updatedAt": 1728288000000 },
+        "position": { "x": 2.75, "y": 24.25, "theta": 0.0, "timestamp": 1728288000000 },
+        "location": { "zone": "STORAGE", "timestamp": 1728288000000 },
+        "connection": { "online": true, "lastHeartbeat": 1728288000000, "lastSuccessfulUpdate": 1728288000000, "source": "SIMULATION" }
+      },
+      "R04": {
+        "virtualState": { "x": 41.25, "y": 17.25, "theta": 3.14159, "timestamp": 1728288000000, "source": "SIMULATION" },
+        "health": { "batteryPercentage": 84, "internalTempC": null, "status": "IDLE", "sensorStatus": { "lidar": true, "healthy": true }, "faultCode": null, "updatedAt": 1728288000000, "source": "SIMULATION" },
+        "currentTask": { "taskId": null, "destination": null, "taskStatus": null, "phase": null, "pickup": null, "updatedAt": 1728288000000 },
+        "position": { "x": 41.25, "y": 17.25, "theta": 3.14159, "timestamp": 1728288000000 },
+        "location": { "zone": "STORAGE", "timestamp": 1728288000000 },
+        "connection": { "online": true, "lastHeartbeat": 1728288000000, "lastSuccessfulUpdate": 1728288000000, "source": "SIMULATION" }
+      },
+      "R05": {
+        "virtualState": { "x": 41.25, "y": 10.25, "theta": 0.0, "timestamp": 1728288000000, "source": "SIMULATION" },
+        "health": { "batteryPercentage": 97, "internalTempC": null, "status": "IDLE", "sensorStatus": { "lidar": false, "healthy": true }, "faultCode": null, "updatedAt": 1728288000000, "source": "SIMULATION" },
+        "currentTask": { "taskId": null, "destination": null, "taskStatus": null, "phase": null, "pickup": null, "updatedAt": 1728288000000 },
+        "position": { "x": 41.25, "y": 10.25, "theta": 0.0, "timestamp": 1728288000000 },
+        "location": { "zone": "STORAGE", "timestamp": 1728288000000 },
+        "connection": { "online": true, "lastHeartbeat": 1728288000000, "lastSuccessfulUpdate": 1728288000000, "source": "SIMULATION" }
+      },
+      "R06": {
+        "virtualState": { "x": 41.25, "y": 24.25, "theta": 3.14159, "timestamp": 1728288000000, "source": "SIMULATION" },
+        "health": { "batteryPercentage": 75, "internalTempC": null, "status": "IDLE", "sensorStatus": { "lidar": true, "healthy": true }, "faultCode": null, "updatedAt": 1728288000000, "source": "SIMULATION" },
+        "currentTask": { "taskId": null, "destination": null, "taskStatus": null, "phase": null, "pickup": null, "updatedAt": 1728288000000 },
+        "position": { "x": 41.25, "y": 24.25, "theta": 3.14159, "timestamp": 1728288000000 },
+        "location": { "zone": "STORAGE", "timestamp": 1728288000000 },
+        "connection": { "online": true, "lastHeartbeat": 1728288000000, "lastSuccessfulUpdate": 1728288000000, "source": "SIMULATION" }
+      }
+    },
+    "racks": {
+      "RACK-A1": { "x": 10.5, "y": 5.5, "w": 2.0, "h": 5.0, "pickFace": { "x": 12.25, "y": 5.5 } },
+      "RACK-A2": { "x": 10.5, "y": 15.5, "w": 2.0, "h": 5.0, "pickFace": { "x": 12.25, "y": 15.5 } },
+      "RACK-A3": { "x": 10.5, "y": 25.5, "w": 2.0, "h": 5.0, "pickFace": { "x": 12.25, "y": 25.5 } },
+      "RACK-B1": { "x": 17.0, "y": 5.5, "w": 2.0, "h": 5.0, "pickFace": { "x": 15.25, "y": 5.5 } },
+      "RACK-B2": { "x": 17.0, "y": 15.5, "w": 2.0, "h": 5.0, "pickFace": { "x": 15.25, "y": 15.5 } },
+      "RACK-B3": { "x": 17.0, "y": 25.5, "w": 2.0, "h": 5.0, "pickFace": { "x": 15.25, "y": 25.5 } },
+      "RACK-C1": { "x": 23.5, "y": 5.5, "w": 2.0, "h": 5.0, "pickFace": { "x": 25.25, "y": 5.5 } },
+      "RACK-C2": { "x": 23.5, "y": 15.5, "w": 2.0, "h": 5.0, "pickFace": { "x": 25.25, "y": 15.5 } },
+      "RACK-C3": { "x": 23.5, "y": 25.5, "w": 2.0, "h": 5.0, "pickFace": { "x": 25.25, "y": 25.5 } },
+      "RACK-D1": { "x": 30.0, "y": 5.5, "w": 2.0, "h": 5.0, "pickFace": { "x": 28.25, "y": 5.5 } },
+      "RACK-D2": { "x": 30.0, "y": 15.5, "w": 2.0, "h": 5.0, "pickFace": { "x": 28.25, "y": 15.5 } },
+      "RACK-D3": { "x": 30.0, "y": 25.5, "w": 2.0, "h": 5.0, "pickFace": { "x": 28.25, "y": 25.5 } }
+    }
+  }
+}

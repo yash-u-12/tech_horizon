@@ -907,6 +907,16 @@ export class SimulationEngine {
     this.nodes = fresh.nodes;
     this.metricsAcc = { nearMisses: 0, conflictsResolved: 0, reassignments: 0, replans: 0, distance: 0, energy: 0, slaBreaches: 0 };
     this.recentConflictKeys.clear();
+    // Restore the remaining constructor state so a reset engine is identical to
+    // a freshly built one (crucial for reproducible experiments: the engine RNG
+    // and publish cadence must restart from the seed, not carry over).
+    this.rng = fresh.rng;
+    this.eventCounter = fresh.eventCounter;
+    this.trafficCounter = fresh.trafficCounter;
+    this.accumulator = fresh.accumulator;
+    this.lastPublish = fresh.lastPublish;
+    this.baseComms = { ...fresh.baseComms };
+    this.nodeTimers = { ...fresh.nodeTimers };
     this.emit('INFO', 'SYSTEM', 'SYSTEM', 'SIMULATION RESET');
     this.snapshot = this.buildSnapshot();
     this.listeners.forEach((l) => l(this.snapshot));

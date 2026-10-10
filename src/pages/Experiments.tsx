@@ -1,17 +1,20 @@
 /**
  * EXPERIMENTS / DEMO MODE (§38)
  *
- * Runs the simulation HEADLESS — no rendering, no UI coupling — for identical
- * seeded durations with and without a scenario, then reports the real deltas
- * from the real metrics accumulator. Nothing here is fabricated.
+ * Runs controlled trials on the LIVE simulation engine — the same singleton the
+ * whole app renders — for identical seeded durations with and without a
+ * scenario, then reports the real deltas from the real metrics accumulator.
+ * The shared animation loop is paused only for the duration of a trial so every
+ * run is deterministic, then resumed. After each scenario arm the scenario's own
+ * recovery is performed, so the fleet is handed back at baseline — the solution
+ * is executed, not merely measured. Nothing here is fabricated.
  */
 
 import { useMemo, useState } from 'react';
 import clsx from 'clsx';
 import { BarChart3, FlaskConical, Loader2, Play, RotateCcw, Sigma } from 'lucide-react';
-import { SimulationEngine } from '@/simulation/engine';
 import { SCENARIOS } from '@/simulation/scenarios/scenarios';
-import { DEFAULT_CONFIG } from '@/simulation/runtime';
+import { runtime, DEFAULT_CONFIG } from '@/simulation/runtime';
 import { useNexus } from '@/store/useNexus';
 import { Chip, KV, Panel, Stat, type Tone } from '@/components/ui';
 import type { ExperimentResult, ExperimentMetrics } from '@/simulation/types';
@@ -55,7 +58,7 @@ export function Experiments() {
   const run = async (scenarioId: string) => {
     setRunning(scenarioId);
     setProgress(0);
-    // yield a frame so the UI paints the running state before the blocking work
+    // yield a frame so the UI paints the running state before the trial starts
     await new Promise((r) => setTimeout(r, 30));
 
     const acc = (m: ExperimentMetrics[]): ExperimentMetrics => {
@@ -66,34 +69,73 @@ export function Experiments() {
       return out;
     };
 
-    const baselineRuns: ExperimentMetrics[] = [];
-    const scenarioRuns: ExperimentMetrics[] = [];
-    for (let i = 0; i < RUNS; i++) {
-      baselineRuns.push(SimulationEngine.runHeadless(DEFAULT_CONFIG, DURATION));
-      setProgress((i + 0.5) / RUNS);
-      await new Promise((r) => setTimeout(r, 0));
-      scenarioRuns.push(
-        SimulationEngine.runHeadless(DEFAULT_CONFIG, DURATION, scenarioId, 20),
-      );
-      setProgress((i + 1) / RUNS);
-      await new Promise((r) => setTimeout(r, 0));
-    }
+    const engine = runtime.engine;
 
-    const sc = SCENARIOS.find((s) => s.id === scenarioId)!;
-    const result: ExperimentResult = {
-      id: `EXP-${String(experiments.length + 1).padStart(2, '0')}`,
-      name: sc.name,
-      scenarioId,
-      baseline: acc(baselineRuns),
-      scenario: acc(scenarioRuns),
-      at: Date.now(),
-      durationSeconds: DURATION,
-      runs: RUNS,
-      notes: `${RUNS} seeded runs × ${DURATION}s · seed ${DEFAULT_CONFIG.seed} · scenario injected at t=20s`,
+    // Drive the shared engine, not a throwaway copy. The runtime's rAF advance
+    // loop is paused for the trial so the step count per run is exact and
+    // reproducible (same seed → same metrics); it resumes the moment we finish.
+    // Yielding between steps lets the scene render the trial as it plays.
+    const trial = async (scenario?: string): Promise<ExperimentMetrics> => {
+      runtime.reset();
+      for (let k = 0; k < 4; k++) engine.createGeneratedOrder();
+      const start = engine.time;
+      const end = start + DURATION;
+      let triggered = !scenario;
+      let tick = 0;
+      while (engine.time < end - 1e-9) {
+        if (!triggered && engine.time >= start + 20) {
+          engine.triggerScenario(scenario!);
+          triggered = true;
+        }
+        engine.step();
+        if (++tick % 10 === 0) await new Promise((r) => setTimeout(r, 0));
+      }
+      if (!triggered && scenario) engine.triggerScenario(scenario);
+      runtime.emit();
+      const metrics = runtime.snapshot.metrics;
+      // Perform the solution: run the scenario's own clear/recovery so the fleet
+      // returns to baseline (failed robots recovered, comms restored, aisle
+      // cleared, faults released). Measured after the metrics are read, so the
+      // comparison still reflects the perturbed window.
+      if (scenario && engine.activeScenario) {
+        engine.clearScenario();
+        runtime.emit();
+      }
+      return metrics;
     };
-    setExperiments([result, ...experiments]);
-    setRunning(null);
-    notify(`${result.id} COMPLETE · ${RUNS} SEEDED RUNS × ${DURATION}s`, 'SUCCESS');
+
+    runtime.stop();
+    try {
+      const baselineRuns: ExperimentMetrics[] = [];
+      const scenarioRuns: ExperimentMetrics[] = [];
+      for (let i = 0; i < RUNS; i++) {
+        baselineRuns.push(await trial());
+        setProgress((i + 0.5) / RUNS);
+        scenarioRuns.push(await trial(scenarioId));
+        setProgress((i + 1) / RUNS);
+      }
+
+      const sc = SCENARIOS.find((s) => s.id === scenarioId)!;
+      const result: ExperimentResult = {
+        id: `EXP-${String(experiments.length + 1).padStart(2, '0')}`,
+        name: sc.name,
+        scenarioId,
+        baseline: acc(baselineRuns),
+        scenario: acc(scenarioRuns),
+        at: Date.now(),
+        durationSeconds: DURATION,
+        runs: RUNS,
+        notes: `${RUNS} seeded runs × ${DURATION}s · seed ${DEFAULT_CONFIG.seed} · scenario injected at t=20s`,
+      };
+      setExperiments([result, ...experiments]);
+      notify(`${result.id} COMPLETE · ${RUNS} SEEDED RUNS × ${DURATION}s`, 'SUCCESS');
+    } finally {
+      // Always hand the shared runtime back to the app; leave the trial's state
+      // (and scenario history) in place so the scene keeps playing from where
+      // the trial ended.
+      runtime.start();
+      setRunning(null);
+    }
   };
 
   const latest = experiments[0] ?? null;
@@ -104,11 +146,12 @@ export function Experiments() {
       <div className="mb-3 flex items-start gap-3 rounded-md border border-line2 bg-abyss/50 px-3 py-2.5">
         <Sigma size={14} className="mt-[1px] shrink-0 text-analysis" />
         <div className="text-[11px] leading-relaxed text-txt2">
-          <b className="text-txt">CONTROLLED TRIALS.</b> Each trial runs the same engine{' '}
+          <b className="text-txt">CONTROLLED TRIALS.</b> Each trial drives the live engine{' '}
           <b className="mono">{RUNS}×</b> for <b className="mono">{DURATION}s</b> of simulated time with the
-          same seed — once unperturbed, once with the scenario injected at t=20s. The engine runs
-          headless: identical code path, identical metrics, no rendering. Reported numbers are the mean
-          across runs.
+          same seed — once unperturbed, once with the scenario injected at t=20s. The shared simulation is
+          paused while a trial runs, so every run is a deterministic, controlled comparison; the results
+          are the mean across runs. After each arm the scenario is cleared — the recovery that solves it
+          (failed robots revived, comms restored, aisle cleared) is performed and visible in the event log.
         </div>
       </div>
 

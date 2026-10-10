@@ -148,6 +148,7 @@ export const useNexus = create<NexusState>((set, get) => ({
 }));
 
 // Bridge the engine's 10 Hz snapshot into the store.
+// (Fleet telemetry for Firebase lives in integrations/fleetPublisher — 5 s.)
 runtime.subscribe((snap) => useNexus.setState({ snap }));
 
 // ── convenience selectors ───────────────────────────────────────────────────

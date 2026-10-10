@@ -65,7 +65,15 @@ export const SCENARIOS: Scenario[] = [
       const target = ctx.busiestAgent() ?? ctx.agents[1];
       if (!target) return;
       target.state.estop = false;
+      const heldTask = target.state.taskId ?? undefined;
       target.fail('HARDWARE FAULT · DRIVE CONTROLLER');
+      // Release the held job back to the auction — this is the "solution": the
+      // task returns to the board and the fleet reassigns it without any
+      // operator intervention (the demo promise, and scenario D's drill).
+      if (heldTask) {
+        ctx.tasks.reQueue(heldTask, 'ROBOT FAILURE · TASK RELEASED FOR REASSIGNMENT', ctx.time);
+        ctx.emit({ t: ctx.time, severity: 'WARNING', source: 'TASK', category: 'TASK', message: `${heldTask} RELEASED · ${target.state.id} OFFLINE`, taskId: heldTask, robotId: target.state.id });
+      }
       // physical hardware goes with it
       const hw = target.state.hardwareId;
       if (hw) {

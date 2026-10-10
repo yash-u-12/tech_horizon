@@ -1,22 +1,48 @@
 /**
  * FIREBASE REALTIME DATABASE BRIDGE
  *
- * One-way telemetry out of the digital twin: coordinates chosen in the 3D scene
- * are published to Firebase RTDB so external dashboards can see where the
- * operator told a robot to go. The helper also supports subscribing back so a
- * remote client can park the twin at a target.
+ * The single, authoritative link between the digital twin and Firebase RTDB.
+ * Everything the fleet exposes lives under one root node, `ragha`:
+ *
+ *   ragha/
+ *     robotCount        number of robots in the fleet
+ *     updatedAt         ms timestamp of the last fleet metadata write
+ *     robots/<robotId>/ virtualState    pose + timestamp + source
+ *                       health        battery %, status, sensor/fault, source
+ *                       currentTask   taskId, destination, status, pickup
+ *                       position      convenient x/y/theta mirror
+ *                       location      warehouse zone
+ *                       connection    online / heartbeat / last update
+ *                       physicalState actual (or mock-labelled) telemetry
+ *                       command       operator command IN (separate from telemetry)
+ *     racks/<rackId>/   x, y, w, h, pickFace
+ *
+ * Design rules enforced here:
+ *   - Telemetry and commands are separate nodes so a command write can never
+ *     clobber telemetry and vice versa.
+ *   - Per-robot writes use `update` at `ragha/robots/<id>`; we never `set` the
+ *     `ragha` root, so unrelated fields (e.g. `command`) survive a refresh.
+ *   - Physical measurements are labelled with their true source; mock hardware
+ *     is never presented as real.
+ *   - Configuration is optional: until `VITE_FIREBASE_DATABASE_URL` is set every
+ *     call is a safe no-op and the warehouse keeps running untouched.
  *
  * Configure the database URL before running (never commit the real value):
  *
  *   // .env.local
  *   VITE_FIREBASE_DATABASE_URL=https://<project>.default.rtdb.firebaseio.com
- *
- * Until that variable is set every publish/subscribe is a safe no-op and the
- * warehouse keeps running untouched.
  */
 
 import { initializeApp, type FirebaseApp } from 'firebase/app';
-import { getDatabase, onValue, ref, set, type Database, type Unsubscribe } from 'firebase/database';
+import {
+  getDatabase,
+  onValue,
+  ref,
+  set,
+  update,
+  type Database,
+  type Unsubscribe,
+} from 'firebase/database';
 
 /**
  * `tsconfig` pins ambient types to `node`, so Vite's `client` typings are not
@@ -62,72 +88,225 @@ function connect(): Database | null {
 export const isFirebaseConfigured = (): boolean => Boolean(DATABASE_URL);
 
 // ─────────────────────────────────────────────────────────────────────────────
-
-export interface RobotTarget {
-  x: number;
-  y: number;
-  timestamp: number;
-}
-
-/**
- * Write a target to `/robots/<robotId>/target` as `{ x, y, timestamp }`.
- * Returns `false` (with a console error) when Firebase is not configured or
- * the write fails, so callers can treat it as optional telemetry.
- */
-export async function publishRobotTarget(robotId: string, x: number, y: number): Promise<boolean> {
-  const db = connect();
-  if (!db) return false;
-  try {
-    const payload: RobotTarget = { x, y, timestamp: Date.now() };
-    await set(ref(db, `robots/${robotId}/target`), payload);
-    return true;
-  } catch (err) {
-    console.error(`[firebase] write to /robots/${robotId}/target failed:`, err);
-    return false;
-  }
-}
-
-/**
- * Subscribe to `/robots/<robotId>/target`. Calls `onChange` with the latest
- * target (or `null` when the node does not exist / Firebase is unconfigured).
- * Returns an unsubscribe function.
- */
-export function subscribeRobotTarget(robotId: string, onChange: (target: RobotTarget | null) => void): Unsubscribe {
-  const db = connect();
-  if (!db) {
-    onChange(null);
-    return () => {};
-  }
-  return onValue(ref(db, `robots/${robotId}/target`), (s) => {
-    onChange(s.exists() ? (s.val() as RobotTarget) : null);
-  });
-}
-
+// Schema
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface RobotStateSample {
+/** Where a value came from — never blur simulated with real measurements. */
+export type RaghaDataSource = 'SIMULATION' | 'PHYSICAL-ROS2' | 'PHYSICAL-MOCK';
+
+export interface RaghaVirtualState {
+  x: number;
+  y: number;
+  theta: number;
+  timestamp: number;
+  source: RaghaDataSource;
+}
+
+export interface RaghaSensorStatus {
+  lidar: boolean;
+  healthy: boolean;
+}
+
+export interface RaghaHealth {
+  /** 0..100 */
+  batteryPercentage: number;
+  /** °C — null when the platform does not report it */
+  internalTempC: number | null;
+  status: string;
+  sensorStatus: RaghaSensorStatus | null;
+  faultCode: string | null;
+  updatedAt: number;
+  source: RaghaDataSource;
+}
+
+export interface RaghaTaskInfo {
+  taskId: string | null;
+  destination: { x: number; y: number } | null;
+  taskStatus: string | null;
+  phase: string | null;
+  pickup: { x: number; y: number } | null;
+  updatedAt: number;
+}
+
+export interface RaghaPosition {
   x: number;
   y: number;
   theta: number;
   timestamp: number;
 }
 
+export interface RaghaLocation {
+  zone: string | null;
+  timestamp: number;
+}
+
+export interface RaghaConnection {
+  online: boolean;
+  /** ms epoch of the last sim heartbeat */
+  lastHeartbeat: number;
+  /** ms epoch of the last successful telemetry write */
+  lastSuccessfulUpdate: number;
+  source: RaghaDataSource;
+}
+
+/** Only present for robots bound to a physical (or mock) body. */
+export interface RaghaPhysicalState {
+  x: number;
+  y: number;
+  theta: number;
+  speed: number;
+  battery: number | null;
+  positionError: number;
+  sync: string;
+  timestamp: number;
+  source: 'PHYSICAL-ROS2' | 'PHYSICAL-MOCK';
+}
+
+export interface RaghaRobot {
+  virtualState: RaghaVirtualState;
+  health: RaghaHealth;
+  currentTask: RaghaTaskInfo;
+  position: RaghaPosition;
+  location: RaghaLocation;
+  connection: RaghaConnection;
+  physicalState?: RaghaPhysicalState;
+}
+
+export interface RaghaRack {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  pickFace: { x: number; y: number } | null;
+}
+
+export type RaghaCommandType = 'GOTO_WAYPOINT' | 'STOP' | 'ESTOP';
+
+export interface RaghaCommand {
+  commandId: string;
+  type: RaghaCommandType;
+  /** null for STOP / ESTOP */
+  targetX: number | null;
+  targetY: number | null;
+  targetTheta: number | null;
+  maxSpeed: number;
+  seq: number;
+  timestamp: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Writes — telemetry
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Stream a live pose to `/robots/<robotId>/state` as
- * `{ x, y, theta, timestamp }` so a physical robot can mirror it.
+ * Merge a robot's telemetry into `ragha/robots/<robotId>`.
  *
- * Callers must throttle: the render loop runs at ~60 Hz. A 100 ms cadence
- * (~10 Hz, matching the simulation snapshot rate) is plenty for mirroring.
+ * Uses `update` (not `set`) so sibling nodes such as `command` are preserved.
+ * Returns `false` (with a console error) when Firebase is not configured or the
+ * write fails, so callers can treat it as optional telemetry.
  */
-export async function publishRobotState(robotId: string, x: number, y: number, theta: number): Promise<boolean> {
+export async function publishRaghaRobot(robotId: string, robot: RaghaRobot): Promise<boolean> {
   const db = connect();
   if (!db) return false;
   try {
-    const payload: RobotStateSample = { x, y, theta, timestamp: Date.now() };
-    await set(ref(db, `robots/${robotId}/state`), payload);
+    await update(ref(db, `ragha/robots/${robotId}`), robot);
     return true;
   } catch (err) {
-    console.error(`[firebase] write to /robots/${robotId}/state failed:`, err);
+    console.error(`[firebase] write to /ragha/robots/${robotId} failed:`, err);
     return false;
   }
+}
+
+/** Replace the rack catalogue at `ragha/racks`. */
+export async function publishRaghaRacks(racks: Record<string, RaghaRack>): Promise<boolean> {
+  const db = connect();
+  if (!db) return false;
+  try {
+    await set(ref(db, 'ragha/racks'), racks);
+    return true;
+  } catch (err) {
+    console.error('[firebase] write to /ragha/racks failed:', err);
+    return false;
+  }
+}
+
+/** Merge fleet metadata (robot count + updatedAt) into the `ragha` root. */
+export async function publishRaghaFleetMeta(robotCount: number): Promise<boolean> {
+  const db = connect();
+  if (!db) return false;
+  try {
+    await update(ref(db, 'ragha'), { robotCount, updatedAt: Date.now() });
+    return true;
+  } catch (err) {
+    console.error('[firebase] write to /ragha (fleet meta) failed:', err);
+    return false;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Writes — commands (kept strictly separate from telemetry)
+// ─────────────────────────────────────────────────────────────────────────────
+
+let commandSeq = 0;
+
+function nextCommandId(): string {
+  commandSeq += 1;
+  return `${Date.now().toString(36)}-${commandSeq.toString(36)}`;
+}
+
+/**
+ * Publish an operator command to `ragha/robots/<robotId>/command`.
+ *
+ * This is the only actuation-facing node. Nothing in the current simulation
+ * consumes it — the physical gateway does not read Firebase yet — so writing a
+ * command here must never be assumed to move a robot.
+ */
+export async function publishRobotCommand(robotId: string, command: RaghaCommand): Promise<boolean> {
+  const db = connect();
+  if (!db) return false;
+  try {
+    await set(ref(db, `ragha/robots/${robotId}/command`), command);
+    return true;
+  } catch (err) {
+    console.error(`[firebase] write to /ragha/robots/${robotId}/command failed:`, err);
+    return false;
+  }
+}
+
+/** Build and publish a `GOTO_WAYPOINT` command for a selected robot. */
+export async function publishGotoCommand(
+  robotId: string,
+  x: number,
+  y: number,
+  maxSpeed = 1,
+): Promise<boolean> {
+  return publishRobotCommand(robotId, {
+    commandId: nextCommandId(),
+    type: 'GOTO_WAYPOINT',
+    targetX: x,
+    targetY: y,
+    targetTheta: null,
+    maxSpeed,
+    seq: ++commandSeq,
+    timestamp: Date.now(),
+  });
+}
+
+/**
+ * Subscribe to `ragha/robots/<robotId>/command`. Calls `onChange` with the
+ * latest command (or `null` when the node does not exist / Firebase is
+ * unconfigured). Returns an unsubscribe function.
+ */
+export function subscribeRobotCommand(
+  robotId: string,
+  onChange: (command: RaghaCommand | null) => void,
+): Unsubscribe {
+  const db = connect();
+  if (!db) {
+    onChange(null);
+    return () => {};
+  }
+  return onValue(ref(db, `ragha/robots/${robotId}/command`), (s) => {
+    onChange(s.exists() ? (s.val() as RaghaCommand) : null);
+  });
 }

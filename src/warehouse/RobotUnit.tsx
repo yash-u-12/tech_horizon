@@ -13,12 +13,6 @@ import { useFrame } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
 import type { RobotState } from '@/simulation/types';
 import { tx, tz, tRot, statusColor } from './shared';
-import { publishRobotState } from '@/integrations/firebase';
-
-/** Cadence for streaming pose to Firebase (~10 Hz, matches the 10 Hz snapshot). */
-const TELEMETRY_INTERVAL_MS = 100;
-/** Physical fleet node to mirror. Defaults to the simulated robot's own id. */
-const MIRROR_ROBOT_ID = 'R1';
 
 interface Props {
   state: RobotState;
@@ -42,7 +36,6 @@ export function RobotUnit({ state, selected, hovered, showLabel, onSelect, onHov
   const colour = useMemo(() => new THREE.Color(state.colour), [state.colour]);
   const isPhysical = state.executionMode === 'PHYSICAL';
   const highlight = selected || hovered;
-  const lastPublish = useRef(0);
 
   useFrame(({ clock }) => {
     const g = group.current;
@@ -50,13 +43,6 @@ export function RobotUnit({ state, selected, hovered, showLabel, onSelect, onHov
     g.position.x = tx(state.pose.x);
     g.position.z = tz(state.pose.y);
     g.rotation.y = tRot(state.pose.theta);
-
-    // stream live pose to Firebase at ~10 Hz so a physical robot can mirror it
-    const now = performance.now();
-    if (now - lastPublish.current >= TELEMETRY_INTERVAL_MS) {
-      lastPublish.current = now;
-      void publishRobotState(MIRROR_ROBOT_ID, state.pose.x, state.pose.y, state.pose.theta);
-    }
 
     // status beacon: colour follows the agent's own operational state
     if (statusLight.current) {

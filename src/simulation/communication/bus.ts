@@ -37,11 +37,17 @@ export interface CommsRecord {
   taskId?: string;
   /** sim time the message was handed to the bus */
   at: number;
+  /** original message payload, captured for operator inspection only */
+  payload: Message;
   summary: string;
   /** robot ids that actually received it */
   deliveredTo: string[];
   /** robot ids whose link dropped it */
   droppedFor: string[];
+  /** per-recipient sim time for successful delivery */
+  deliveredAt: Record<string, number>;
+  /** per-recipient sim time for failed delivery */
+  droppedAt: Record<string, number>;
 }
 
 interface Pending {
@@ -111,10 +117,16 @@ export class CommsBus {
         if (!isSender) {
           if (!link.connected || this.rng() < link.loss) {
             this.stats.dropped++;
-            if (!p.record.droppedFor.includes(id)) p.record.droppedFor.push(id);
+            if (!p.record.droppedFor.includes(id)) {
+              p.record.droppedFor.push(id);
+              p.record.droppedAt[id] = now;
+            }
             continue;
           }
-          if (!p.record.deliveredTo.includes(id)) p.record.deliveredTo.push(id);
+          if (!p.record.deliveredTo.includes(id)) {
+            p.record.deliveredTo.push(id);
+            p.record.deliveredAt[id] = now;
+          }
         }
         box.push(p.msg);
         this.stats.delivered++;
@@ -155,9 +167,12 @@ export class CommsBus {
       from: msg.from,
       taskId: taskIdOf(msg),
       at,
+      payload: msg,
       summary: summarize(msg),
       deliveredTo: [],
       droppedFor: [],
+      deliveredAt: {},
+      droppedAt: {},
     };
     this.records.push(record);
     if (this.records.length > 240) this.records.shift();

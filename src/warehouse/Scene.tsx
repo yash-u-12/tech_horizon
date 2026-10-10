@@ -19,9 +19,11 @@ import { PerceptionOverlay, Obstacles, TrafficMarkers, TaskMarkers } from './Ove
 import { CameraRig } from './CameraRig';
 import { tx, tz } from './shared';
 import { WORLD_H, WORLD_W } from '@/simulation/environment/warehouse';
+import { publishGotoCommand } from '@/integrations/firebase';
 
 function GroundPicker() {
   const { clickMode, placeFrom, setPlaceFrom } = useNexus();
+  const selectedRobot = useNexus((s) => s.selectedRobot);
   const { raycaster, camera, gl } = useThree();
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
 
@@ -74,6 +76,14 @@ function GroundPicker() {
               runtime.emit();
               useNexus.getState().setClickMode('SELECT');
               useNexus.getState().notify(`${result.task.id} CONFIRMED · CRITICAL PRIORITY · ALLOCATION STARTED`, 'SUCCESS');
+              // Operator intent: tell the *selected* fleet robot to go here.
+              // Never falls back to a hardcoded id, and never broadcasts to the
+              // whole fleet — the command path is per-robot by design.
+              const selectedAgent = selectedRobot ? runtime.engine.agent(selectedRobot) : null;
+              if (selectedAgent) {
+                const maxSpeed = selectedAgent.state.capabilities.maxVelocity ?? 1;
+                void publishGotoCommand(selectedRobot!, location.x, location.y, maxSpeed);
+              }
             }
           }
         }}
